@@ -191,6 +191,17 @@ async function main() {
     console.log("Whistle already installed.");
   }
 
+  // Remove npm self-link junction to prevent infinite recursion in tauri_build resource scanning
+  const selfLink = join(resDir, "node_modules", "whistlebox-whistle");
+  if (existsSync(selfLink)) {
+    if (os === "win32") {
+      execSync(`rmdir "${selfLink}"`, { stdio: "inherit" });
+    } else {
+      execSync(`rm -f "${selfLink}"`, { stdio: "inherit" });
+    }
+    console.log("Removed npm self-link junction: whistlebox-whistle");
+  }
+
   console.log("\nSidecar preparation complete!");
   console.log(`  Node.js: ${nodeBinPath}`);
   console.log(`  Whistle: ${whistleModules}`);

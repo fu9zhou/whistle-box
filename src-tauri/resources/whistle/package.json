@@ -2,7 +2,6 @@
   "name": "whistlebox-whistle",
   "private": true,
   "dependencies": {
-    "whistle": "2.10.2",
-    "whistle-box": "file:../../.."
+    "whistle": "2.10.2"
   }
 }
