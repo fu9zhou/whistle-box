@@ -1,0 +1,47 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+release/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# Sidecar binaries (downloaded at build time)
+src-tauri/binaries/
+
+# Bundled whistle (installed at build time, keep package.json & lockfile)
+src-tauri/resources/whistle/node_modules/
+
+# IDE
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Config files with credentials (may contain passwords)
+src-tauri/whistlebox-config.json
+src-tauri/whistlehub-config.json
+src-tauri/*-config.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript cache
+*.tsbuildinfo

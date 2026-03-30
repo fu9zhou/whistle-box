@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhistleBox — 跨平台 Whistle 代理管理桌面客户端</title>
+<meta name="description" content="基于 Tauri v2 + React 构建的跨平台 Whistle 代理管理桌面客户端。像 Clash 一样管理系统代理，像 SwitchyOmega 一样配置域名级规则路由。">
+<meta property="og:title" content="WhistleBox">
+<meta property="og:description" content="跨平台 Whistle 代理管理桌面客户端，基于 Tauri v2 + React 构建。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://fu9zhou.github.io/whistle-box/">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%2317B37F' opacity='.15'/><circle cx='16' cy='16' r='8' fill='%2317B37F'/><circle cx='16' cy='16' r='3' fill='%230F1219'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════
+   TOKENS
+   ═══════════════════════════════════════════════ */
+:root {
+  --bg:        #0f1219;
+  --bg-raised: #161b27;
+  --bg-card:   rgba(22, 27, 39, 0.65);
+  --accent:    #17b37f;
+  --accent-dim:#0e7a56;
+  --accent-glow: rgba(23,179,127,0.35);
+  --text:      #dce1ec;
+  --text-secondary: #8d9ab5;
+  --text-muted:#5a6780;
+  --border:    rgba(108,122,153,0.12);
+  --border-hover: rgba(108,122,153,0.28);
+  --code-bg:   #0c0f16;
+  --radius:    14px;
+  --font-display: 'DM Sans', sans-serif;
+  --font-body:   'Noto Sans SC', 'DM Sans', system-ui, sans-serif;
+  --font-mono:   'JetBrains Mono', 'Consolas', monospace;
+}
+
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+   ═══════════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px;overflow-x:hidden}
+body{
+  font-family:var(--font-body);
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  line-height:1.7;
+  overflow-x:hidden;
+}
+a{color:var(--accent);text-decoration:none;transition:opacity .2s}
+a:hover{opacity:.8}
+img,svg{display:block}
+::selection{background:var(--accent);color:#fff}
+
+/* ═══════════════════════════════════════════════
+   UTILITIES
+   ═══════════════════════════════════════════════ */
+.container{max-width:1140px;margin:0 auto;padding:0 28px}
+.section{padding:120px 0;position:relative}
+.section-label{
+  font-family:var(--font-mono);
+  font-size:.75rem;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.section-label::before{content:'';width:20px;height:1px;background:var(--accent)}
+.section-title{
+  font-family:var(--font-display);
+  font-size:clamp(1.75rem,4vw,2.5rem);
+  font-weight:700;
+  letter-spacing:-.02em;
+  line-height:1.2;
+  margin-bottom:20px;
+}
+.section-desc{
+  color:var(--text-secondary);
+  max-width:560px;
+  font-size:1.05rem;
+  line-height:1.8;
+}
+
+/* scroll reveal */
+.reveal{opacity:0;transform:translateY(32px);transition:opacity .7s cubic-bezier(.16,1,.3,1),transform .7s cubic-bezier(.16,1,.3,1)}
+.reveal.visible{opacity:1;transform:translateY(0)}
+.reveal-delay-1{transition-delay:.1s}
+.reveal-delay-2{transition-delay:.2s}
+.reveal-delay-3{transition-delay:.3s}
+.reveal-delay-4{transition-delay:.4s}
+.reveal-delay-5{transition-delay:.5s}
+.reveal-delay-6{transition-delay:.6s}
+.reveal-delay-7{transition-delay:.7s}
+
+/* ═══════════════════════════════════════════════
+   NAV
+   ═══════════════════════════════════════════════ */
+.nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  padding:16px 0;
+  transition:background .35s,backdrop-filter .35s,box-shadow .35s;
+}
+.nav.scrolled{
+  background:rgba(15,18,25,0.82);
+  backdrop-filter:blur(16px);
+  box-shadow:0 1px 0 var(--border);
+}
+.nav-inner{display:flex;align-items:center;justify-content:space-between}
+.nav-brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:700;font-size:1.15rem;color:var(--text)}
+.nav-links{display:flex;align-items:center;gap:28px;list-style:none}
+.nav-links a{color:var(--text-secondary);font-size:.9rem;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--text);opacity:1}
+.nav-cta{
+  background:var(--accent);color:#fff;
+  padding:8px 20px;border-radius:8px;
+  font-size:.85rem;font-weight:600;
+  transition:transform .2s,box-shadow .2s;
+}
+.nav-cta:hover{transform:translateY(-1px);box-shadow:0 4px 20px var(--accent-glow);opacity:1}
+.mobile-toggle{display:none;background:none;border:none;color:var(--text);cursor:pointer}
+
+/* ═══════════════════════════════════════════════
+   HERO
+   ═══════════════════════════════════════════════ */
+.hero{
+  min-height:100vh;
+  display:flex;align-items:center;
+  position:relative;
+  overflow:hidden;
+  padding-top:80px;
+}
+
+/* animated grid */
+.hero-grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(23,179,127,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23,179,127,.05) 1px, transparent 1px);
+  background-size:60px 60px;
+  mask-image:radial-gradient(ellipse 70% 60% at 50% 40%, black 30%, transparent 100%);
+  animation:grid-drift 25s linear infinite;
+}
+@keyframes grid-drift{to{background-position:60px 60px}}
+
+/* glow orbs */
+.hero-orb{position:absolute;border-radius:50%;filter:blur(80px);pointer-events:none}
+.hero-orb-1{width:500px;height:500px;background:rgba(23,179,127,.12);top:-10%;left:55%;animation:float-1 18s ease-in-out infinite}
+.hero-orb-2{width:350px;height:350px;background:rgba(59,130,246,.08);bottom:5%;left:-5%;animation:float-2 22s ease-in-out infinite}
+@keyframes float-1{0%,100%{transform:translate(0,0)}50%{transform:translate(-40px,30px)}}
+@keyframes float-2{0%,100%{transform:translate(0,0)}50%{transform:translate(30px,-25px)}}
+
+.hero-content{position:relative;z-index:2;max-width:700px}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(23,179,127,.1);
+  border:1px solid rgba(23,179,127,.2);
+  border-radius:20px;padding:6px 16px;
+  font-size:.8rem;font-weight:500;color:var(--accent);
+  margin-bottom:28px;
+}
+.hero-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+.hero-title{
+  font-family:var(--font-display);
+  font-size:clamp(2.5rem,6vw,4.2rem);
+  font-weight:700;
+  line-height:1.1;
+  letter-spacing:-.03em;
+  margin-bottom:24px;
+}
+.hero-title .gradient{
+  background:linear-gradient(135deg,var(--accent) 0%,#4ade80 50%,#17b37f 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.hero-subtitle{
+  font-size:1.15rem;line-height:1.8;
+  color:var(--text-secondary);
+  margin-bottom:40px;
+  max-width:540px;
+}
+.hero-actions{display:flex;gap:14px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:13px 28px;border-radius:10px;
+  font-size:.95rem;font-weight:600;
+  transition:transform .2s,box-shadow .2s;
+  cursor:pointer;border:none;
+}
+.btn:hover{transform:translateY(-2px)}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{box-shadow:0 8px 30px var(--accent-glow);opacity:1}
+.btn-outline{
+  background:transparent;color:var(--text);
+  border:1px solid var(--border-hover);
+}
+.btn-outline:hover{border-color:var(--text-muted);opacity:1}
+
+.hero-visual{
+  position:absolute;right:-60px;top:50%;transform:translateY(-50%);
+  width:420px;height:420px;
+  opacity:.18;pointer-events:none;
+}
+.hero-ring{
+  position:absolute;border-radius:50%;
+  border:1px solid rgba(23,179,127,.25);
+}
+.hero-ring-1{inset:0;animation:spin-slow 40s linear infinite}
+.hero-ring-2{inset:40px;animation:spin-slow 30s linear infinite reverse}
+.hero-ring-3{inset:80px;animation:spin-slow 20s linear infinite}
+.hero-ring-node{
+  position:absolute;width:8px;height:8px;
+  border-radius:50%;background:var(--accent);
+}
+@keyframes spin-slow{to{transform:rotate(360deg)}}
+
+/* ═══════════════════════════════════════════════
+   FEATURES
+   ═══════════════════════════════════════════════ */
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:16px;
+  margin-top:48px;
+}
+.feature-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:28px 24px;
+  backdrop-filter:blur(10px);
+  transition:border-color .3s,box-shadow .3s,transform .3s;
+  position:relative;overflow:hidden;
+}
+.feature-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(23,179,127,.3),transparent);
+  opacity:0;transition:opacity .3s;
+}
+.feature-card:hover{
+  border-color:var(--border-hover);
+  transform:translateY(-3px);
+  box-shadow:0 8px 32px rgba(0,0,0,.3);
+}
+.feature-card:hover::before{opacity:1}
+.feature-icon{
+  width:42px;height:42px;
+  border-radius:10px;
+  background:rgba(23,179,127,.1);
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:18px;
+  color:var(--accent);
+}
+.feature-icon svg{width:20px;height:20px}
+.feature-card h3{
+  font-family:var(--font-display);
+  font-size:1.05rem;font-weight:600;
+  margin-bottom:8px;
+  letter-spacing:-.01em;
+}
+.feature-card p{
+  color:var(--text-secondary);
+  font-size:.9rem;line-height:1.7;
+}
+
+/* ═══════════════════════════════════════════════
+   ARCHITECTURE
+   ═══════════════════════════════════════════════ */
+.arch-wrapper{margin-top:48px}
+.arch-layers{
+  display:flex;flex-direction:column;gap:2px;
+  max-width:800px;margin:0 auto;
+}
+.arch-layer{
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px 28px;
+  background:var(--bg-card);
+  backdrop-filter:blur(8px);
+  position:relative;
+}
+.arch-layer-label{
+  font-family:var(--font-mono);
+  font-size:.7rem;letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.arch-layer-label .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.arch-modules{display:flex;flex-wrap:wrap;gap:8px}
+.arch-mod{
+  padding:8px 16px;border-radius:8px;
+  font-size:.82rem;font-weight:500;
+  background:rgba(23,179,127,.06);
+  border:1px solid rgba(23,179,127,.12);
+  color:var(--text);
+  transition:background .2s,border-color .2s;
+}
+.arch-mod:hover{background:rgba(23,179,127,.12);border-color:rgba(23,179,127,.3)}
+.arch-connector{
+  display:flex;justify-content:center;padding:4px 0;
+  color:var(--text-muted);font-size:.75rem;
+  font-family:var(--font-mono);
+  position:relative;z-index:2;
+}
+.arch-connector::before{
+  content:'';position:absolute;left:50%;top:0;bottom:0;
+  width:1px;background:var(--border);
+  transform:translateX(-50%);z-index:-1;
+}
+
+/* ═══════════════════════════════════════════════
+   TECH STACK
+   ═══════════════════════════════════════════════ */
+.tech-grid{
+  display:flex;flex-wrap:wrap;gap:12px;
+  margin-top:48px;
+}
+.tech-badge{
+  display:inline-flex;align-items:center;gap:10px;
+  padding:14px 22px;border-radius:12px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  backdrop-filter:blur(8px);
+  font-weight:500;font-size:.92rem;
+  transition:border-color .3s,transform .2s;
+}
+.tech-badge:hover{border-color:var(--border-hover);transform:translateY(-2px)}
+.tech-badge-icon{
+  width:28px;height:28px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:6px;
+  font-size:.85rem;font-weight:700;
+  flex-shrink:0;
+}
+.tech-badge span{color:var(--text-secondary);font-weight:400;font-size:.82rem;margin-left:2px}
+
+/* ═══════════════════════════════════════════════
+   QUICKSTART
+   ═══════════════════════════════════════════════ */
+.quickstart-layout{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:40px;
+  margin-top:48px;
+  align-items:start;
+}
+.prereqs{display:flex;flex-direction:column;gap:14px}
+.prereq-item{
+  display:flex;align-items:flex-start;gap:12px;
+  padding:14px 18px;border-radius:10px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  font-size:.9rem;
+}
+.prereq-check{color:var(--accent);flex-shrink:0;margin-top:2px}
+.prereq-item strong{display:block;margin-bottom:2px}
+.prereq-item .sub{color:var(--text-secondary);font-size:.82rem}
+
+.terminal{
+  background:var(--code-bg);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  overflow:hidden;
+}
+.terminal-bar{
+  display:flex;align-items:center;gap:7px;
+  padding:12px 16px;
+  background:rgba(255,255,255,.03);
+  border-bottom:1px solid var(--border);
+}
+.terminal-dot{width:10px;height:10px;border-radius:50%}
+.terminal-dot-r{background:#ff5f57}
+.terminal-dot-y{background:#febc2e}
+.terminal-dot-g{background:#28c840}
+.terminal-title{margin-left:8px;font-size:.75rem;color:var(--text-muted);font-family:var(--font-mono)}
+.terminal-body{padding:20px;font-family:var(--font-mono);font-size:.85rem;line-height:2}
+.terminal-line{display:flex;gap:8px}
+.terminal-prompt{color:var(--accent);user-select:none;flex-shrink:0}
+.terminal-cmd{color:var(--text)}
+.terminal-comment{color:var(--text-muted);font-style:italic}
+
+/* ═══════════════════════════════════════════════
+   SECURITY
+   ═══════════════════════════════════════════════ */
+.security-grid{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:16px;
+  margin-top:48px;
+}
+.security-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:28px 24px;
+  backdrop-filter:blur(8px);
+  transition:border-color .3s;
+  position:relative;
+}
+.security-card::after{
+  content:'';position:absolute;bottom:0;left:24px;right:24px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(23,179,127,.15),transparent);
+}
+.security-card:hover{border-color:var(--border-hover)}
+.security-card-icon{
+  width:40px;height:40px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;font-size:1.2rem;
+}
+.security-card h3{
+  font-family:var(--font-display);
+  font-size:1rem;font-weight:600;
+  margin-bottom:10px;
+}
+.security-card ul{
+  list-style:none;display:flex;flex-direction:column;gap:8px;
+}
+.security-card li{
+  color:var(--text-secondary);font-size:.85rem;line-height:1.6;
+  display:flex;align-items:flex-start;gap:8px;
+}
+.security-card li::before{
+  content:'';width:4px;height:4px;border-radius:50%;
+  background:var(--accent);flex-shrink:0;margin-top:8px;
+}
+
+/* ═══════════════════════════════════════════════
+   FOOTER
+   ═══════════════════════════════════════════════ */
+.footer{
+  border-top:1px solid var(--border);
+  padding:48px 0;
+  margin-top:40px;
+}
+.footer-inner{
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:20px;
+}
+.footer-brand{display:flex;align-items:center;gap:10px}
+.footer-brand span{font-family:var(--font-display);font-weight:600;font-size:1rem}
+.footer-copy{color:var(--text-muted);font-size:.82rem}
+.footer-links{display:flex;gap:24px}
+.footer-links a{color:var(--text-secondary);font-size:.85rem;transition:color .2s}
+.footer-links a:hover{color:var(--text)}
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════ */
+@media(max-width:900px){
+  .section{padding:80px 0}
+  .quickstart-layout{grid-template-columns:1fr}
+  .security-grid{grid-template-columns:1fr}
+  .hero-visual{display:none}
+  .nav-links{display:none}
+  .mobile-toggle{display:block}
+}
+@media(max-width:600px){
+  .container{padding:0 18px}
+  .features-grid{grid-template-columns:1fr}
+  .hero{min-height:auto;padding:120px 0 80px}
+  .hero-title{font-size:2rem}
+  .btn{padding:12px 22px;font-size:.88rem}
+  .arch-modules{flex-direction:column}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ NAV ═══════════════ -->
+<nav class="nav" id="nav">
+  <div class="container nav-inner">
+    <a href="#" class="nav-brand">
+      <svg width="28" height="28" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" fill="#17B37F" opacity=".15"/><circle cx="16" cy="16" r="8" fill="#17B37F"/><circle cx="16" cy="16" r="3" fill="#0F1219"/></svg>
+      WhistleBox
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">特性</a></li>
+      <li><a href="#architecture">架构</a></li>
+      <li><a href="#techstack">技术栈</a></li>
+      <li><a href="#quickstart">快速开始</a></li>
+      <li><a href="#security">安全</a></li>
+      <li><a href="https://github.com/fu9zhou/whistle-box" target="_blank" class="nav-cta">GitHub</a></li>
+    </ul>
+    <button class="mobile-toggle" id="mobileToggle" aria-label="菜单">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+    </button>
+  </div>
+</nav>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section class="hero" id="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-orb hero-orb-1"></div>
+  <div class="hero-orb hero-orb-2"></div>
+  <div class="hero-visual" aria-hidden="true">
+    <div class="hero-ring hero-ring-1"><div class="hero-ring-node" style="top:0;left:50%"></div></div>
+    <div class="hero-ring hero-ring-2"><div class="hero-ring-node" style="bottom:0;right:0"></div></div>
+    <div class="hero-ring hero-ring-3"><div class="hero-ring-node" style="top:50%;left:0"></div></div>
+  </div>
+  <div class="container">
+    <div class="hero-content">
+      <div class="hero-badge reveal">
+        <span class="hero-badge-dot"></span>
+        Tauri v2 + React · 开源
+      </div>
+      <h1 class="hero-title reveal reveal-delay-1">
+        代理管理，<br><span class="gradient">开箱即用</span>
+      </h1>
+      <p class="hero-subtitle reveal reveal-delay-2">
+        跨平台 Whistle 代理管理桌面客户端。像 Clash 一样管理系统代理，像 SwitchyOmega 一样配置域名级规则路由，同时内置完整的 Whistle 调试环境——无需手动安装 Node.js。
+      </p>
+      <div class="hero-actions reveal reveal-delay-3">
+        <a href="https://github.com/fu9zhou/whistle-box/releases" target="_blank" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          下载
+        </a>
+        <a href="https://github.com/fu9zhou/whistle-box" target="_blank" class="btn btn-outline">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.37.5 0 5.78 0 12.29c0 5.21 3.43 9.64 8.21 11.21.6.11.82-.26.82-.57v-2.01c-3.34.72-4.04-1.61-4.04-1.61-.55-1.37-1.33-1.74-1.33-1.74-1.09-.74.08-.73.08-.73 1.2.09 1.84 1.24 1.84 1.24 1.07 1.83 2.8 1.3 3.49 1 .11-.78.42-1.3.76-1.6-2.67-.3-5.47-1.33-5.47-5.93 0-1.31.47-2.38 1.24-3.22-.13-.3-.54-1.52.12-3.18 0 0 1.01-.32 3.3 1.23a11.5 11.5 0 0 1 6.02 0c2.3-1.55 3.3-1.23 3.3-1.23.66 1.66.24 2.88.12 3.18.77.84 1.24 1.91 1.24 3.22 0 4.61-2.8 5.63-5.48 5.92.43.37.82 1.1.82 2.22v3.29c0 .31.21.69.82.57C20.57 21.93 24 17.5 24 12.29 24 5.78 18.63.5 12 .5z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FEATURES ═══════════════ -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-label reveal">核心特性</div>
+    <h2 class="section-title reveal reveal-delay-1">你需要的，都在这里</h2>
+    <p class="section-desc reveal reveal-delay-2">从系统代理到 HTTPS 抓包，从规则路由到配置管理，WhistleBox 将 Whistle 的全部能力封装在一个精致的桌面应用中。</p>
+    <div class="features-grid">
+
+      <div class="feature-card reveal">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        </div>
+        <h3>系统级代理</h3>
+        <p>全局 / 规则 / 直连三种模式，一键切换。托盘图标实时反映当前状态，右键菜单快捷操作。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-1">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/></svg>
+        </div>
+        <h3>规则路由</h3>
+        <p>PAC 驱动的域名级精细代理控制，支持通配符与精确匹配。按需代理，不干扰其他流量。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-2">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 8h.01"/><path d="M12 8h.01"/></svg>
+        </div>
+        <h3>内嵌 Whistle</h3>
+        <p>自带 Node.js 运行时和 Whistle 环境，开箱即用。不依赖系统 Node 版本，不污染全局环境。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-3">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+        </div>
+        <h3>自动认证</h3>
+        <p>内嵌界面自动注入 Token 认证，无需手动输入账号密码。CSPRNG 一次性 Token + Origin 校验双保险。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-4">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+        <h3>进程保活</h3>
+        <p>内嵌 Whistle 自动启动、周期健康检查、连续失败自动重启。异常恢复静默完成，无感知。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-5">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+        </div>
+        <h3>外部支持</h3>
+        <p>不仅支持内嵌模式，也可连接外部 Whistle 实例。自动探测存活状态，灵活适配不同工作流。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-6">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+        </div>
+        <h3>配置管理</h3>
+        <p>多 Profile 切换，支持 Whistle 规则与应用配置的导入导出。原子写入防损坏，损坏自动恢复。</p>
+      </div>
+
+      <div class="feature-card reveal reveal-delay-7">
+        <div class="feature-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <h3>HTTPS 抓包</h3>
+        <p>一键安装/卸载根证书，开启 HTTPS 拦截。证书状态与 Whistle 配置自动同步。</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ ARCHITECTURE ═══════════════ -->
+<section class="section" id="architecture">
+  <div class="container">
+    <div class="section-label reveal">系统架构</div>
+    <h2 class="section-title reveal reveal-delay-1">四层分离，各司其职</h2>
+    <p class="section-desc reveal reveal-delay-2">React 负责界面渲染，Tauri IPC 桥接前后端，Rust 处理系统级操作，Node.js Sidecar 承载 Whistle 实例。</p>
+
+    <div class="arch-wrapper reveal reveal-delay-3">
+      <div class="arch-layers">
+
+        <div class="arch-layer">
+          <div class="arch-layer-label"><span class="dot"></span>React Frontend · UI 层</div>
+          <div class="arch-modules">
+            <span class="arch-mod">Dashboard</span>
+            <span class="arch-mod">Whistle UI</span>
+            <span class="arch-mod">ProxyControl</span>
+            <span class="arch-mod">RuleEditor</span>
+            <span class="arch-mod">ConfigManager</span>
+            <span class="arch-mod">Settings</span>
+          </div>
+        </div>
+
+        <div class="arch-connector">&#9661; Tauri IPC (invoke / listen) &#9661;</div>
+
+        <div class="arch-layer">
+          <div class="arch-layer-label"><span class="dot"></span>Rust Backend · 核心层</div>
+          <div class="arch-modules">
+            <span class="arch-mod">proxy/ 系统代理</span>
+            <span class="arch-mod">auth/ 认证代理</span>
+            <span class="arch-mod">config/ 配置管理</span>
+            <span class="arch-mod">whistle/ 进程管理</span>
+            <span class="arch-mod">tray/ 托盘菜单</span>
+            <span class="arch-mod">PAC 服务 (hyper)</span>
+          </div>
+        </div>
+
+        <div class="arch-connector">&#9661; 进程管理 &#9661;</div>
+
+        <div class="arch-layer">
+          <div class="arch-layer-label"><span class="dot"></span>Node.js Sidecar · 代理层</div>
+          <div class="arch-modules">
+            <span class="arch-mod">Node.js Runtime</span>
+            <span class="arch-mod">Whistle 进程</span>
+            <span class="arch-mod">健康检查</span>
+            <span class="arch-mod">证书管理</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ TECH STACK ═══════════════ -->
+<section class="section" id="techstack">
+  <div class="container">
+    <div class="section-label reveal">技术栈</div>
+    <h2 class="section-title reveal reveal-delay-1">现代工具链，坚实地基</h2>
+    <div class="tech-grid reveal reveal-delay-2">
+
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(36,195,242,.1);color:#24C3F2">T2</div>
+        Tauri v2 <span>桌面框架</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(97,218,251,.1);color:#61DAFB">Re</div>
+        React 18 <span>+ TypeScript</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(56,189,248,.1);color:#38BDF8">Tw</div>
+        TailwindCSS <span>样式</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(86,61,124,.15);color:#9B8AC4">Zu</div>
+        Zustand <span>状态管理</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(222,165,132,.1);color:#DEA584">Rs</div>
+        Rust <span>后端</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(23,179,127,.1);color:#17B37F">Hy</div>
+        hyper <span>HTTP 服务</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(139,92,246,.1);color:#8B5CF6">Vi</div>
+        Vite 6 <span>构建</span>
+      </div>
+      <div class="tech-badge">
+        <div class="tech-badge-icon" style="background:rgba(104,159,56,.12);color:#689F38">W</div>
+        Whistle <span>代理工具</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ QUICKSTART ═══════════════ -->
+<section class="section" id="quickstart">
+  <div class="container">
+    <div class="section-label reveal">快速开始</div>
+    <h2 class="section-title reveal reveal-delay-1">三步启动</h2>
+    <p class="section-desc reveal reveal-delay-2">从克隆仓库到看见界面，只需要几条命令。</p>
+
+    <div class="quickstart-layout">
+      <div class="prereqs reveal reveal-delay-3">
+        <h3 style="font-family:var(--font-display);font-size:1.1rem;font-weight:600;margin-bottom:4px">前置条件</h3>
+        <div class="prereq-item">
+          <span class="prereq-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <div><strong>Rust 1.70+</strong><span class="sub">Windows 需安装 MSVC 工具链</span></div>
+        </div>
+        <div class="prereq-item">
+          <span class="prereq-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <div><strong>Node.js 18+</strong><span class="sub">仅开发环境需要</span></div>
+        </div>
+        <div class="prereq-item">
+          <span class="prereq-check"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <div><strong>系统依赖</strong><span class="sub">Linux: libwebkit2gtk-4.1-dev, libappindicator3-dev</span></div>
+        </div>
+
+        <div style="margin-top:12px">
+          <h3 style="font-family:var(--font-display);font-size:1.1rem;font-weight:600;margin-bottom:8px">跨平台支持</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span style="padding:6px 14px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);font-size:.82rem;color:var(--text-secondary)">&#9632; Windows</span>
+            <span style="padding:6px 14px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);font-size:.82rem;color:var(--text-secondary)">&#9679; macOS</span>
+            <span style="padding:6px 14px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border);font-size:.82rem;color:var(--text-secondary)">&#9650; Linux</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="terminal reveal reveal-delay-4">
+        <div class="terminal-bar">
+          <span class="terminal-dot terminal-dot-r"></span>
+          <span class="terminal-dot terminal-dot-y"></span>
+          <span class="terminal-dot terminal-dot-g"></span>
+          <span class="terminal-title">Terminal</span>
+        </div>
+        <div class="terminal-body">
+          <div class="terminal-line"><span class="terminal-comment"># 克隆仓库</span></div>
+          <div class="terminal-line"><span class="terminal-prompt">$</span><span class="terminal-cmd">git clone https://github.com/fu9zhou/whistle-box.git</span></div>
+          <div class="terminal-line"><span class="terminal-prompt">$</span><span class="terminal-cmd">cd whistle-box</span></div>
+          <div style="height:8px"></div>
+          <div class="terminal-line"><span class="terminal-comment"># 安装依赖 + 准备 Node.js sidecar</span></div>
+          <div class="terminal-line"><span class="terminal-prompt">$</span><span class="terminal-cmd">npm run setup</span></div>
+          <div style="height:8px"></div>
+          <div class="terminal-line"><span class="terminal-comment"># 启动开发模式</span></div>
+          <div class="terminal-line"><span class="terminal-prompt">$</span><span class="terminal-cmd">npm run start</span></div>
+          <div style="height:8px"></div>
+          <div class="terminal-line"><span class="terminal-comment"># 构建安装包（Windows）</span></div>
+          <div class="terminal-line"><span class="terminal-prompt">$</span><span class="terminal-cmd">npm run package</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ SECURITY ═══════════════ -->
+<section class="section" id="security">
+  <div class="container">
+    <div class="section-label reveal">安全模型</div>
+    <h2 class="section-title reveal reveal-delay-1">安全不是附加项，是设计原则</h2>
+    <p class="section-desc reveal reveal-delay-2">从网络边界到进程管理，每一层都经过安全审视。</p>
+
+    <div class="security-grid">
+
+      <div class="security-card reveal reveal-delay-3">
+        <div class="security-card-icon" style="background:rgba(23,179,127,.1)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#17B37F" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3>网络边界</h3>
+        <ul>
+          <li>Whistle 仅允许回环/私网地址</li>
+          <li>Auth proxy / PAC 服务绑定 127.0.0.1</li>
+          <li>退出时自动清除系统代理</li>
+        </ul>
+      </div>
+
+      <div class="security-card reveal reveal-delay-4">
+        <div class="security-card-icon" style="background:rgba(59,130,246,.1)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h3>认证授权</h3>
+        <ul>
+          <li>CSPRNG 一次性 Token 鉴权</li>
+          <li>Referer / Origin 双校验</li>
+          <li>local_auth_bypass 默认关闭</li>
+        </ul>
+      </div>
+
+      <div class="security-card reveal reveal-delay-5">
+        <div class="security-card-icon" style="background:rgba(245,158,11,.1)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>
+        </div>
+        <h3>进程管理</h3>
+        <ul>
+          <li>Fail-closed 端口占用识别策略</li>
+          <li>配置原子写入防损坏</li>
+          <li>Node.js sidecar SHA-256 校验</li>
+          <li>npm ci + lockfile 可复现构建</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div>
+      <div class="footer-brand">
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="14" fill="#17B37F" opacity=".15"/><circle cx="16" cy="16" r="8" fill="#17B37F"/><circle cx="16" cy="16" r="3" fill="#0F1219"/></svg>
+        <span>WhistleBox</span>
+      </div>
+      <p class="footer-copy" style="margin-top:6px">MIT License &copy; WhistleBox Contributors</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/fu9zhou/whistle-box" target="_blank">GitHub</a>
+      <a href="https://github.com/fu9zhou/whistle-box/releases" target="_blank">Releases</a>
+      <a href="https://github.com/fu9zhou/whistle-box/issues" target="_blank">Issues</a>
+      <a href="https://github.com/fu9zhou/whistle-box/blob/master/SECURITY.md" target="_blank">安全</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  // nav scroll effect
+  var nav=document.getElementById('nav');
+  var onScroll=function(){nav.classList.toggle('scrolled',window.scrollY>40)};
+  window.addEventListener('scroll',onScroll,{passive:true});
+  onScroll();
+
+  // scroll reveal
+  var io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add('visible');io.unobserve(e.target)}})
+  },{threshold:0.12,rootMargin:'0px 0px -40px 0px'});
+  document.querySelectorAll('.reveal').forEach(function(el){io.observe(el)});
+
+  // mobile menu
+  var toggle=document.getElementById('mobileToggle');
+  var links=document.querySelector('.nav-links');
+  if(toggle&&links){
+    toggle.addEventListener('click',function(){
+      var open=links.style.display==='flex';
+      links.style.display=open?'none':'flex';
+      links.style.flexDirection='column';
+      links.style.position='absolute';
+      links.style.top='60px';
+      links.style.right='20px';
+      links.style.background='rgba(15,18,25,0.95)';
+      links.style.backdropFilter='blur(16px)';
+      links.style.padding='16px 24px';
+      links.style.borderRadius='12px';
+      links.style.border='1px solid '+getComputedStyle(document.documentElement).getPropertyValue('--border');
+      links.style.gap='14px';
+      if(open){links.removeAttribute('style')}
+    });
+  }
+
+  // smooth anchor
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener('click',function(e){
+      var t=document.querySelector(this.getAttribute('href'));
+      if(t){e.preventDefault();t.scrollIntoView({behavior:'smooth',block:'start'})}
+      if(links)links.removeAttribute('style');
+    });
+  });
+})();
+</script>
+</body>
+</html>
