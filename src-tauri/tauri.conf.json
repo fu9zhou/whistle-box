@@ -1,0 +1,59 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicosql/tauri-settings-schema/master/schema.json",
+  "productName": "WhistleBox",
+  "version": "0.1.0",
+  "identifier": "com.whistlebox.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "WhistleBox",
+        "width": 1100,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-src http://127.0.0.1:*; connect-src 'self' http://127.0.0.1:* ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/**/*"
+    ],
+    "externalBin": [
+      "binaries/node"
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": null,
+        "installerHooks": "nsis-hooks.nsi"
+      }
+    }
+  }
+}

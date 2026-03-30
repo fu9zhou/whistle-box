@@ -1,0 +1,451 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+
+  input::-webkit-credentials-auto-fill-button {
+    display: none !important;
+  }
+
+  :root {
+    --bg-primary: #0f1219;
+    --bg-main: #0f1219;
+    --bg-secondary: #1a1f2e;
+    --bg-tertiary: #2d3548;
+    --text-primary: #dce1ec;
+    --text-secondary: #8d9ab5;
+    --text-muted: #6b7a99;
+    --border-color: rgba(108, 122, 153, 0.12);
+    --border-hover: rgba(108, 122, 153, 0.25);
+    --glass-bg: rgba(26, 31, 46, 0.7);
+    --card-bg: rgba(26, 31, 46, 0.7);
+    --input-bg: #1a1f2e;
+    --scrollbar-thumb: rgba(108, 122, 153, 0.3);
+    --scrollbar-hover: rgba(108, 122, 153, 0.5);
+    --iframe-bg: #0f1219;
+  }
+
+  :root.light {
+    --bg-primary: #f5f7fa;
+    --bg-main: #f5f7fa;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #e8ecf2;
+    --text-primary: #1a2035;
+    --text-secondary: #556280;
+    --text-muted: #8d9ab5;
+    --border-color: rgba(0, 0, 0, 0.08);
+    --border-hover: rgba(0, 0, 0, 0.15);
+    --glass-bg: rgba(255, 255, 255, 0.85);
+    --card-bg: rgba(255, 255, 255, 0.9);
+    --input-bg: #f0f2f6;
+    --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+    --scrollbar-hover: rgba(0, 0, 0, 0.25);
+    --iframe-bg: #ffffff;
+  }
+
+  /*
+   * Light theme: Tailwind utility overrides
+   * Inverts dark-first surface palette to light equivalents.
+   * Grouped by property type for maintainability.
+   */
+
+  /* Text colors: dark surface values → inverted for light backgrounds */
+  :root.light .text-surface-100 {
+    color: #1a2035;
+  }
+  :root.light .text-surface-200 {
+    color: #2d3548;
+  }
+  :root.light .text-surface-300 {
+    color: #454f68;
+  }
+  :root.light .text-surface-400 {
+    color: #556280;
+  }
+  :root.light .text-surface-500 {
+    color: #6b7a99;
+  }
+  :root.light .text-surface-600 {
+    color: #8d9ab5;
+  }
+
+  /* Background: solid surface colors */
+  :root.light .bg-surface-700 {
+    background-color: #c0c8d8;
+  }
+  :root.light .bg-surface-800 {
+    background-color: #e8ecf2;
+  }
+  :root.light .bg-surface-900 {
+    background-color: #f0f2f6;
+  }
+  :root.light .bg-surface-950 {
+    background-color: #f5f7fa;
+  }
+
+  /* Background: surface with opacity */
+  :root.light .bg-surface-800\/50 {
+    background-color: rgba(0, 0, 0, 0.03);
+  }
+  :root.light .bg-surface-800\/60 {
+    background-color: rgba(232, 236, 242, 0.6);
+  }
+  :root.light .bg-surface-800\/70 {
+    background-color: rgba(232, 236, 242, 0.7);
+  }
+  :root.light .bg-surface-900\/30 {
+    background-color: rgba(240, 242, 246, 0.5);
+  }
+  :root.light .bg-surface-900\/50 {
+    background-color: rgba(240, 242, 246, 0.7);
+  }
+  :root.light .bg-surface-950\/50 {
+    background-color: rgba(245, 247, 250, 0.5);
+  }
+
+  /* Background: accent/blue tints (reduced opacity for light bg) */
+  :root.light .bg-accent-500\/10 {
+    background-color: rgba(23, 179, 127, 0.06);
+  }
+  :root.light .bg-accent-500\/15 {
+    background-color: rgba(23, 179, 127, 0.12);
+  }
+  :root.light .bg-accent-950\/30 {
+    background-color: rgba(23, 179, 127, 0.06);
+  }
+  :root.light .bg-accent-950\/40 {
+    background-color: rgba(23, 179, 127, 0.08);
+  }
+  :root.light .bg-blue-500\/10 {
+    background-color: rgba(59, 130, 246, 0.06);
+  }
+  :root.light .bg-blue-950\/40 {
+    background-color: rgba(59, 130, 246, 0.08);
+  }
+
+  /* Background/text/border: emerald (success states) */
+  :root.light .bg-emerald-950\/30 {
+    background-color: rgba(5, 150, 105, 0.08);
+  }
+  :root.light .border-emerald-800\/20 {
+    border-color: rgba(5, 150, 105, 0.25);
+  }
+  :root.light .text-emerald-400 {
+    color: #059669;
+  }
+  :root.light .text-danger-400 {
+    color: #dc2626;
+  }
+
+  /* Border: surface colors */
+  :root.light .border-surface-600 {
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+  :root.light .border-surface-700 {
+    border-color: rgba(0, 0, 0, 0.12);
+  }
+  :root.light .border-surface-700\/50 {
+    border-color: rgba(0, 0, 0, 0.12);
+  }
+  :root.light .border-surface-800 {
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+  :root.light .border-surface-800\/50 {
+    border-color: rgba(0, 0, 0, 0.08);
+  }
+  :root.light .border-surface-900\/30 {
+    border-color: rgba(0, 0, 0, 0.06);
+  }
+  :root.light .border-l-accent-500 {
+    border-left-color: #17b37f;
+  }
+  :root.light .border-l-blue-500 {
+    border-left-color: #3b82f6;
+  }
+  :root.light .border-l-surface-600 {
+    border-left-color: #c0c8d8;
+  }
+  :root.light .border-l-warning-500 {
+    border-left-color: #f59e0b;
+  }
+  :root.light .border-l-danger-500 {
+    border-left-color: #ef4444;
+  }
+
+  /* Ring colors */
+  :root.light .ring-accent-500\/30 {
+    --tw-ring-color: rgba(23, 179, 127, 0.2);
+  }
+  :root.light .ring-accent-700\/20 {
+    --tw-ring-color: rgba(23, 179, 127, 0.15);
+  }
+  :root.light .ring-blue-500\/30 {
+    --tw-ring-color: rgba(59, 130, 246, 0.2);
+  }
+  :root.light .ring-surface-600\/30 {
+    --tw-ring-color: rgba(0, 0, 0, 0.1);
+  }
+
+  /* Hover states */
+  :root.light .hover\:bg-surface-900\/60:hover {
+    background-color: rgba(240, 242, 246, 0.8);
+  }
+  :root.light .hover\:border-surface-700\/50:hover {
+    border-color: rgba(0, 0, 0, 0.15);
+  }
+  :root.light .hover\:text-surface-200:hover {
+    color: #2d3548;
+  }
+  :root.light .hover\:text-surface-300:hover {
+    color: #454f68;
+  }
+  :root.light .hover\:text-surface-400:hover {
+    color: #556280;
+  }
+
+  html {
+    font-size: 14px;
+  }
+
+  body {
+    font-family:
+      "Segoe UI",
+      "Microsoft YaHei",
+      "Noto Sans SC",
+      system-ui,
+      -apple-system,
+      sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  select,
+  [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  button:focus {
+    outline: none;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--accent-500, #17b37f);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .status-dot--active {
+    background-color: #17b37f;
+    box-shadow: 0 0 8px rgba(23, 179, 127, 0.5);
+  }
+
+  .status-dot--inactive {
+    background-color: #6b7a99;
+  }
+
+  .status-dot--error {
+    background-color: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  }
+
+  .status-dot--warning {
+    background-color: #f59e0b;
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+  }
+
+  .btn-primary {
+    @apply bg-accent-600 hover:bg-accent-500 text-white font-medium
+      px-4 py-2 rounded-lg transition-all duration-200
+      active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    @apply font-medium px-4 py-2 rounded-lg transition-all duration-200
+      active:scale-[0.97];
+    border: 1px solid var(--border-color);
+  }
+  .btn-secondary:hover {
+    border-color: var(--border-hover);
+    filter: brightness(1.1);
+  }
+
+  .btn-danger {
+    @apply bg-danger-600 hover:bg-danger-500 text-white font-medium
+      px-4 py-2 rounded-lg transition-all duration-200
+      active:scale-[0.97];
+  }
+
+  .input-field {
+    background: var(--input-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    @apply rounded-lg px-3 py-2 placeholder-surface-500
+      focus:outline-none focus:border-accent-600 focus:ring-1 focus:ring-accent-600/30
+      transition-all duration-200;
+  }
+
+  .card {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    @apply p-5 transition-all duration-200;
+  }
+  .card:hover {
+    border-color: var(--border-hover);
+  }
+
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg
+      hover:bg-surface-800/60
+      transition-colors duration-150 cursor-pointer select-none
+      outline-none focus:outline-none focus-visible:outline-none
+      border border-transparent;
+    color: var(--text-secondary);
+  }
+  .nav-item:hover {
+    color: var(--text-primary);
+  }
+  :root.light .nav-item:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .nav-item--active {
+    @apply text-accent-400 bg-accent-950/40 border-accent-800/20
+      outline-none;
+  }
+  :root.light .nav-item--active {
+    background: rgba(23, 179, 127, 0.08);
+    border-color: rgba(23, 179, 127, 0.2);
+  }
+
+  .themed-sidebar {
+    background: var(--bg-primary);
+    border-right: 1px solid var(--border-color);
+  }
+  :root.light .themed-sidebar {
+    background: #ffffff;
+  }
+
+  .themed-titlebar {
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+  }
+  :root.light .themed-titlebar {
+    background: #ffffff;
+  }
+
+  .themed-main {
+    background: var(--bg-primary);
+  }
+  :root.light .themed-main {
+    background: #f5f7fa;
+  }
+
+  .themed-text {
+    color: var(--text-primary);
+  }
+
+  .themed-text-secondary {
+    color: var(--text-secondary);
+  }
+
+  .themed-text-muted {
+    color: var(--text-muted);
+  }
+
+  .toast-error {
+    @apply fixed bottom-4 right-4 bg-danger-600 text-white px-4 py-3 rounded-xl
+      shadow-lg z-50 text-sm max-w-md;
+    animation: slide-up 0.3s ease-out;
+  }
+}
+
+@layer utilities {
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+
+  .no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-pop {
+  from {
+    transform: scale(0.95) translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
