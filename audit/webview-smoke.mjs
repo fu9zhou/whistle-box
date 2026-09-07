@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { runInNewContext } from 'node:vm';
 import { verifyWindowsSystem } from './windows-system.mjs';
 import { verifyExternalMode } from './external-mode.mjs';
+import { configureDebugPolicy } from './webview-debug-policy.mjs';
 const executable = resolve(process.env.WHISTLEBOX_TEST_EXECUTABLE || "src-tauri/target/release/whistle-box.exe");
 const defaults = await transform(readFileSync("src/defaults.ts", "utf8"), {
   loader: "ts",
@@ -38,6 +39,8 @@ config.whistle.storage_path = resolve(dir, "whistle");
 config.app_settings.minimize_to_tray = false;
 writeFileSync(resolve(dir, "config.json"), JSON.stringify(config));
 const debugPort = await free();
+const browserArguments = `--remote-debugging-port=${debugPort} ${process.env.WHISTLEBOX_TEST_BROWSER_ARGS || ''}`.trim();
+const restoreDebugPolicy = configureDebugPolicy(browserArguments);
 const child = spawn(executable, [], {
   windowsHide: true,
   env: {
@@ -45,7 +48,7 @@ const child = spawn(executable, [], {
     RUST_LOG: "info",
     WHISTLEBOX_DATA_DIR: dir,
     WEBVIEW2_USER_DATA_FOLDER: resolve(dir, "webview"),
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort} ${process.env.WHISTLEBOX_TEST_BROWSER_ARGS || ''}`.trim(),
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: browserArguments,
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -197,6 +200,7 @@ try {
   if (page) await page.screenshot({ path: "test-results/tauri-failure.png" }).catch(() => {});
   throw e;
 } finally {
+  try {
   if (child.exitCode === null && child.signalCode === null) {
     try {
       await invoke("cmd_stop_whistle");
@@ -205,4 +209,5 @@ try {
     await once(child, "exit").catch(() => {});
   }
   await browser?.close().catch(() => {});
+  } finally { restoreDebugPolicy(); }
 }
