@@ -8,6 +8,7 @@ import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
 import { runInNewContext } from 'node:vm';
 import { verifyWindowsSystem } from './windows-system.mjs';
+import { verifyExternalMode } from './external-mode.mjs';
 const executable = resolve(process.env.WHISTLEBOX_TEST_EXECUTABLE || "src-tauri/target/release/whistle-box.exe");
 const defaults = await transform(readFileSync("src/defaults.ts", "utf8"), {
   loader: "ts",
@@ -163,6 +164,7 @@ try {
     assert.equal(init.interceptHttpsConnects, enable);
   }
   console.log('PASS: actual PAC routing and HTTPS capture switch');
+  await verifyExternalMode(invoke, free);
   const cert = await invoke("cmd_check_cert_installed");
   assert.equal(typeof cert, "boolean");
   console.log("PASS: current CA fingerprint check completed read-only");
@@ -178,7 +180,7 @@ try {
 
 } catch (e) {
   if (process.env.GITHUB_ACTIONS === 'true') {
-    const annotate = (title, value) => console.error(`::error title=${title}::${String(value).slice(-8000).replaceAll('fixture-secret', '[redacted]').replace(/([?&]token=)[^\s&]+/g, '$1[redacted]').replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+    const annotate = (title, value) => console.error(`::error title=${title}::${String(value).slice(-8000).replaceAll('fixture-secret', '[redacted]').replace(/([?&]_?token=)[^\s&]+/g, '$1[redacted]').replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
     annotate('WebView2 验证失败', e?.message ?? e);
     const logPath = resolve(dir, 'whistlebox.log');
     annotate('应用启动诊断', `pid=${child.pid}, exit=${child.exitCode}, signal=${child.signalCode}\n${startupOutput}\n${existsSync(logPath) ? readFileSync(logPath, 'utf8').slice(-5000) : '应用尚未创建日志文件'}`);
