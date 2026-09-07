@@ -55,6 +55,7 @@ for (const stream of [child.stdout, child.stderr]) {
 }
 let browser;
 let page;
+let connectionError;
 const invoke = async (command, args = {}) =>
   page.evaluate(({ command, args }) => window.__TAURI__.core.invoke(command, args), {
     command,
@@ -65,11 +66,11 @@ try {
     try {
       browser = await chromium.connectOverCDP(`http://127.0.0.1:${debugPort}`, { timeout: 800 });
       break;
-    } catch {}
+    } catch (error) { connectionError = error.message; }
     if (child.exitCode !== null) throw Error("native application exited before UI");
     await new Promise((r) => setTimeout(r, 300));
   }
-  assert.ok(browser, "WebView2 debugging endpoint not available");
+  assert.ok(browser, `WebView2 debugging endpoint not available: ${connectionError}`);
   for (let i = 0; i < 40; i++) {
     page = browser.contexts()[0]?.pages()[0];
     if (page) break;
@@ -185,9 +186,13 @@ try {
     const logPath = resolve(dir, 'whistlebox.log');
     annotate('应用启动诊断', `pid=${child.pid}, exit=${child.exitCode}, signal=${child.signalCode}\n${startupOutput}\n${existsSync(logPath) ? readFileSync(logPath, 'utf8').slice(-5000) : '应用尚未创建日志文件'}`);
     try {
-      const processes = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq ${child.pid} -or $_.ParentProcessId -eq ${child.pid} } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json -Compress`], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+      const processes = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq ${child.pid} -or $_.ParentProcessId -eq ${child.pid} } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath,CommandLine | ConvertTo-Json -Compress`], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
       annotate('应用进程诊断', processes);
     } catch (diagnosticError) { annotate('进程诊断失败', diagnosticError.message); }
+    try {
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/version`, { signal: AbortSignal.timeout(3000) });
+      annotate('调试端口直接访问', `${response.status}: ${await response.text()}`);
+    } catch (error) { annotate('调试端口直接访问', `${error.message}: ${error.cause?.message || ''}`); }
   }
   if (page) await page.screenshot({ path: "test-results/tauri-failure.png" }).catch(() => {});
   throw e;
