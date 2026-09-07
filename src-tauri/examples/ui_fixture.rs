@@ -13,7 +13,7 @@ async fn main() {
         storage_path: args[3].clone(),
         ..Default::default()
     };
-    let node = root.join("binaries/node-x86_64-pc-windows-msvc.exe");
+    let node = process::development_node_path();
     let launcher = root.join("resources/whistle/launcher.cjs");
     let pid = process::spawn(node, launcher, &conn).await.unwrap();
     auth::start_auth_proxy_internal(

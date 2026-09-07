@@ -1,12 +1,18 @@
 # WhistleBox
 
-面向 Windows 的 Whistle 桌面客户端。内置 Node.js 与 Whistle，也可以连接已有实例，在一个窗口中管理网络调试、代理规则和证书。
+[![最新版本](https://img.shields.io/github/v/release/fu9zhou/whistle-box?label=版本)](https://github.com/fu9zhou/whistle-box/releases/latest)
+[![构建状态](https://github.com/fu9zhou/whistle-box/actions/workflows/windows.yml/badge.svg)](https://github.com/fu9zhou/whistle-box/actions/workflows/windows.yml)
+[![下载量](https://img.shields.io/github/downloads/fu9zhou/whistle-box/total?label=下载)](https://github.com/fu9zhou/whistle-box/releases)
+[![许可证](https://img.shields.io/github/license/fu9zhou/whistle-box)](LICENSE)
+![构建平台](https://img.shields.io/badge/构建-Windows%20%7C%20macOS%20%7C%20Linux-blue)
+
+基于 Tauri 的 Whistle 桌面客户端，提供 Windows、macOS 与 Linux 构建。内置 Node.js 与 Whistle，也可以连接已有实例，在一个窗口中管理网络调试、代理规则和证书。
 
 ![WhistleBox 项目介绍：内置与外部实例、规则与配置管理、系统代理切换、证书管理](docs/assets/whistlebox-overview.png)
 
 [下载安装](https://github.com/fu9zhou/whistle-box/releases/latest) · [更新记录](CHANGELOG.md) · [问题反馈](https://github.com/fu9zhou/whistle-box/issues) · [构建状态](https://github.com/fu9zhou/whistle-box/actions/workflows/windows.yml)
 
-> 上图为项目介绍示意图。目前发布 Windows x64 安装包；macOS、Linux 暂无经过验收的发行版。
+> 上图为项目介绍示意图。Windows 已完成桌面与系统功能回归；macOS、Linux 为实验性构建，系统代理和证书需手动配置。已有 Release 的附件以发行页面为准；最新开发构建见 [Actions](https://github.com/fu9zhou/whistle-box/actions/workflows/windows.yml)。
 
 ## 功能
 
@@ -22,7 +28,19 @@
 
 应用内的“规则”页面编辑 **PAC 域名匹配规则**。请求改写、替换、转发等完整 Whistle 规则在“Whistle”页面编辑。
 
+## 平台支持
+
+| 平台 | 架构与安装包 | 当前范围 |
+| --- | --- | --- |
+| Windows 10/11 | x64，`.exe` | 内置/外部实例、系统代理、证书管理；完整 Windows 回归 |
+| macOS | Apple Silicon（arm64）与 Intel（x64），`.dmg` | 实验性；内置/外部实例，代理和 CA 信任需手动配置 |
+| Linux | x64，`.deb` / `.AppImage` | 实验性；基于 Ubuntu 22.04 构建，代理和 CA 信任需手动配置 |
+
+macOS、Linux 的 CI 检查包含原生编译、Rust/前端测试和真实 Whistle 进程生命周期验证，尚未完成桌面界面、托盘与开机启动的人工验收。macOS 安装包暂未使用 Apple Developer ID 签名或公证。
+
 ## 安装与开始使用
+
+以下为 Windows 安装步骤：
 
 1. 在[发行页面](https://github.com/fu9zhou/whistle-box/releases/latest)下载 `WhistleBox_版本号_x64-setup.exe`。
 2. 运行安装包，按中文引导安装。需要 Windows 10/11 x64 和 WebView2 运行时；安装器按需下载 WebView2。
@@ -30,6 +48,12 @@
 4. 确认 Whistle 正常运行后，选择所需代理模式。HTTPS 调试需要信任当前实例的根证书。
 
 普通用户无需安装 Node.js、Rust 或全局 Whistle。发行包暂未进行 Windows 代码签名，可将文件的 SHA-256 与发行页的 `SHA256SUMS.txt` 对照。
+
+### macOS / Linux 试用
+
+在最新成功的 Actions 运行中下载对应的 `macos-arm64`、`macos-x64` 或 `linux-x64` 产物并解压。macOS 打开 DMG 后将应用拖入 Applications；Linux 安装 DEB，或给 AppImage 执行权限后运行。Linux 需要桌面环境，DEB 的运行库由包管理器安装。
+
+首次启动选择内置或外部实例。手动将浏览器或系统 HTTP/HTTPS 代理指向当前实例（内置默认 `127.0.0.1:18899`）；在 Whistle 页面下载当前实例 CA，再通过系统证书工具导入并信任。应用的全局/规则代理切换与证书自动管理目前仅支持 Windows；退出应用后请手动还原代理。
 
 ### 已安装 Whistle 时如何使用
 
@@ -55,7 +79,7 @@
 
 安装或移除时，Windows 可能显示证书确认窗口。若应用停留在“安装中”或“移除中”，请切换到该窗口完成确认或取消操作。
 
-应用设置、诊断日志及代理恢复记录位于 `%APPDATA%\WhistleBox`。卸载默认保留设置、Whistle 数据与证书归属记录；需要移除本应用安装的证书时，请先在应用中操作。导出的设置可能包含认证信息，分享前请脱敏。
+应用设置与诊断日志目录：Windows 为 `%APPDATA%\WhistleBox`，macOS 为 `~/Library/Application Support/WhistleBox`，Linux 为 `${XDG_CONFIG_HOME:-~/.config}/WhistleBox`。Windows 的代理恢复记录也保存在该目录。卸载默认保留设置、Whistle 数据与证书归属记录；需要移除本应用安装的证书时，请先在应用中操作。导出的设置可能包含认证信息，分享前请脱敏。
 
 ## 常见问题
 
@@ -75,11 +99,11 @@
 npm run reset-config -- -Executable "C:\实际安装目录\whistle-box.exe"
 ```
 
-反馈时请提供应用版本、Windows 版本、内置/外部模式、复现步骤与脱敏日志，请勿上传密码、认证链接或抓包中的隐私数据。
+反馈时请提供应用版本、操作系统版本与 CPU 架构、内置/外部模式、复现步骤与脱敏日志，请勿上传密码、认证链接或抓包中的隐私数据。
 
 ## 开发与构建
 
-需要 Node.js 22 或 24、Rust 稳定版、Visual Studio C++ 构建工具、Windows SDK 与 WebView2。Tauri CLI 已列入开发依赖。环境要求参见 [Tauri 官方文档](https://v2.tauri.app/zh-cn/start/prerequisites/)。
+需要 Node.js 22 或 24、Rust 稳定版，以及目标平台工具链：Windows 使用 Visual Studio C++ 构建工具、Windows SDK 与 WebView2；macOS 使用 Xcode Command Line Tools；Linux 安装 WebKitGTK 4.1、GTK 3、OpenSSL 和 AppIndicator 等构建依赖。Tauri CLI 已列入开发依赖。环境要求参见 [Tauri 官方文档](https://v2.tauri.app/zh-cn/start/prerequisites/)。
 
 ```powershell
 git clone https://github.com/fu9zhou/whistle-box.git
@@ -120,15 +144,17 @@ npm run package
 npm run test:webview
 ```
 
-浏览器测试使用已安装的 Edge；真实实例测试使用 `.tooling` 下的隔离目录，截图位于 `test-results`。WebView2 测试默认不修改系统代理或信任证书；GitHub 临时 Windows 环境额外验证系统设置、0.1.0 升级、全新安装和卸载。第三方插件及非 Windows 平台不在当前验收范围。详见 [0.1.1 验证与发布说明](audit/RELEASE-0.1.1.md)和[历史修复报告](audit/FIX-VALIDATION-2026-09-07.md)。
+浏览器测试使用已安装的 Edge；真实实例测试使用 `.tooling` 下的隔离目录，截图位于 `test-results`。WebView2 测试默认不修改系统代理或信任证书；GitHub 临时 Windows 环境额外验证系统设置、0.1.0 升级、全新安装和卸载。第三方插件不在当前验收范围；macOS/Linux 的验证范围见上方平台支持表。详见 [0.1.1 验证与发布说明](audit/RELEASE-0.1.1.md)和[历史修复报告](audit/FIX-VALIDATION-2026-09-07.md)。
 
 本地 WebView2 测试应使用普通用户权限。GitHub 管理员环境会临时设置仅针对 WhistleBox 的调试策略，并在测试结束后恢复。手动运行“WebView2 启动诊断”工作流可复用缓存程序定位问题，可选系统功能测试；该诊断不替代正式发布验收。
 
 ### 自动构建与发布
 
-推送 `main`、提交合并请求或手动运行工作流会触发 Windows 构建与回归验证，通过后生成安装包和 SHA-256 校验文件，可在工作流产物中下载。
+推送 `main`、提交合并请求或手动运行“多平台构建与发布”工作流会同时构建 Windows x64、macOS arm64、macOS x64 和 Linux x64。各平台通过检查后上传安装包与 `SHA256SUMS.txt`；可从运行详情的 Artifacts 下载。也可单独运行“macOS 与 Linux 构建”工作流。
 
-版本以 `package.json` 为准，构建时同步至 Tauri 和 Cargo。发布时更新版本与更新记录，验证后提交代码，再创建对应的 `v版本号` 标签。标签构建全部通过后自动创建 GitHub Release；失败不会发布。发布使用 GitHub 自动提供的令牌，无需另配个人令牌。
+`npm run package` 按当前系统选择 NSIS、DMG 或 DEB/AppImage；请在对应操作系统上构建。Windows 安装包位于 `release/`，macOS/Linux 安装包位于 `src-tauri/target/release/bundle/`。CI 使用 [GitHub 官方原生运行器](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)，Linux 依赖遵循 [Tauri 前置要求](https://v2.tauri.app/start/prerequisites/)。
+
+版本以 `package.json` 为准，构建时同步至 Tauri 和 Cargo。发布时更新版本与更新记录，验证后提交代码，再创建对应的 `v版本号` 标签。四个平台及依赖检查全部通过后，标签构建自动创建包含所有平台安装包和统一校验文件的 GitHub Release；失败不会发布。发布使用 GitHub 自动提供的令牌，无需另配个人令牌。
 
 ### 目录结构
 
@@ -139,7 +165,7 @@ src-tauri/resources/         内置 Whistle 启动器及维护脚本
 scripts/                    开发、版本同步和安装包脚本
 audit/                      回归测试与历史验收报告
 docs/assets/                项目介绍图片
-.github/workflows/          Windows 验证、构建与发布
+.github/workflows/          多平台验证、构建与发布
 site/                       项目网站
 ```
 

@@ -1,4 +1,4 @@
-name: Windows 构建与发布
+name: 多平台构建与发布
 
 on:
   push:
@@ -15,6 +15,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  unix:
+    name: macOS 与 Linux
+    uses: ./.github/workflows/unix.yml
   rust-dependencies:
     name: Rust 依赖公告检查
     runs-on: ubuntu-latest
@@ -151,7 +154,7 @@ jobs:
   release:
     name: 发布发行版
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, dependencies, rust-dependencies]
+    needs: [build, unix, dependencies, rust-dependencies]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -159,8 +162,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: windows-x64
-          path: release
+          pattern: '*-*64'
+          path: artifacts
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.2'
+      - name: 汇总多平台安装包与校验文件
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -exec cp {} release/ \;
+          node scripts/checksums.mjs
       - name: 创建 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

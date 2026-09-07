@@ -60,9 +60,7 @@ fn resource(handle: &tauri::AppHandle, relative: &str) -> Result<PathBuf, String
         .ok_or_else(|| format!("Required embedded resource missing: {relative}"))
 }
 
-pub async fn start(handle: &tauri::AppHandle, conn: &WhistleConnection) -> Result<u32, String> {
-    stop().await?;
-    let node_name = if cfg!(windows) { "node.exe" } else { "node" };
+pub fn development_node_path() -> PathBuf {
     let arch = std::env::consts::ARCH;
     let triple = if cfg!(windows) {
         format!("{arch}-pc-windows-msvc")
@@ -71,11 +69,23 @@ pub async fn start(handle: &tauri::AppHandle, conn: &WhistleConnection) -> Resul
     } else {
         format!("{arch}-unknown-linux-gnu")
     };
-    let dev_name = format!(
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
         "binaries/node-{triple}{}",
         if cfg!(windows) { ".exe" } else { "" }
-    );
-    let node = resource(handle, node_name).or_else(|_| resource(handle, &dev_name))?;
+    ))
+}
+
+pub async fn start(handle: &tauri::AppHandle, conn: &WhistleConnection) -> Result<u32, String> {
+    stop().await?;
+    let node_name = if cfg!(windows) { "node.exe" } else { "node" };
+    let node = resource(handle, node_name).or_else(|error| {
+        let path = development_node_path();
+        if cfg!(debug_assertions) && path.is_file() {
+            Ok(path)
+        } else {
+            Err(error)
+        }
+    })?;
     let launcher = resource(handle, "resources/whistle/launcher.cjs")?;
     spawn(node, launcher, conn).await
 }

@@ -21,7 +21,9 @@ async function fixture(name, port = undefined) {
   const dir = resolve(".tooling/lifecycle", name);
   mkdirSync(dir, { recursive: true });
   const child = spawn(
-    resolve("src-tauri/target/debug/examples/ui_fixture.exe"),
+    resolve(
+      `src-tauri/target/debug/examples/ui_fixture${process.platform === "win32" ? ".exe" : ""}`,
+    ),
     [String(port), String(auth), dir],
     { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] },
   );

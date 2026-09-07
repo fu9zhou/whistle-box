@@ -11,7 +11,7 @@
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
     "setup": "npm ci && npm run prepare-sidecar",
     "start": "npm run prepare-sidecar && tauri dev",
-    "package": "npm run prepare-sidecar && tauri build --bundles nsis && node scripts/patch-nsis-lang.mjs",
+    "package": "node scripts/package.mjs",
     "reset-config": "powershell -ExecutionPolicy Bypass -File scripts/reset-config.ps1",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.{js,mjs}\" \"*.{json,ts,js,mjs}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.{js,mjs}\" \"*.{json,ts,js,mjs}\"",
