@@ -85,6 +85,7 @@ export default function ConfigManager() {
       profiles: newProfiles,
       active_profile_id: newActiveId,
     });
+    await useAppStore.getState().refreshPac();
   };
 
   const handleRenameProfile = async (id: string) => {
@@ -267,8 +268,9 @@ export default function ConfigManager() {
       <div className="px-6 pb-6 pt-4 space-y-6 max-w-5xl mx-auto">
         {opResult && (
           <div
-            className={`glass-panel p-3 border-l-[3px] flex items-center gap-3 animate-fade-in ${opResult.type === "success" ? "border-l-accent-500" : "border-l-danger-500"
-              }`}
+            className={`glass-panel p-3 border-l-[3px] flex items-center gap-3 animate-fade-in ${
+              opResult.type === "success" ? "border-l-accent-500" : "border-l-danger-500"
+            }`}
           >
             {opResult.type === "success" ? (
               <Check size={16} className="text-accent-400 shrink-0" />
@@ -309,7 +311,10 @@ export default function ConfigManager() {
                 className="input-field flex-1 text-sm"
                 autoFocus
               />
-              <button onClick={handleCreateProfile} className="btn-primary text-xs py-1.5">
+              <button
+                onClick={() => handleCreateProfile().catch(() => {})}
+                className="btn-primary text-xs py-1.5"
+              >
                 创建
               </button>
             </div>
@@ -338,12 +343,14 @@ export default function ConfigManager() {
                   )}
                   <div
                     onClick={() => {
-                      if (!isActive && !isEditing && !dragState) switchProfile(profile.id);
+                      if (!isActive && !isEditing && !dragState)
+                        switchProfile(profile.id).catch(() => {});
                     }}
-                    className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-200 ${isActive
-                      ? "bg-accent-950/30 border-accent-800/20 ring-1 ring-accent-700/20"
-                      : "bg-surface-900/30 border-surface-800/50 hover:border-surface-700/50 cursor-pointer"
-                      } ${isDragging ? "opacity-50" : ""}`}
+                    className={`flex items-center gap-3 p-3.5 rounded-xl border transition-all duration-200 ${
+                      isActive
+                        ? "bg-accent-950/30 border-accent-800/20 ring-1 ring-accent-700/20"
+                        : "bg-surface-900/30 border-surface-800/50 hover:border-surface-700/50 cursor-pointer"
+                    } ${isDragging ? "opacity-50" : ""}`}
                   >
                     <div
                       className="text-surface-600 cursor-grab active:cursor-grabbing shrink-0"
@@ -356,10 +363,11 @@ export default function ConfigManager() {
                       <GripVertical size={14} />
                     </div>
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isActive
-                        ? "bg-accent-500/15 text-accent-400"
-                        : "bg-surface-800 text-surface-500"
-                        }`}
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        isActive
+                          ? "bg-accent-500/15 text-accent-400"
+                          : "bg-surface-800 text-surface-500"
+                      }`}
                     >
                       <FolderCog size={16} />
                     </div>
@@ -370,10 +378,10 @@ export default function ConfigManager() {
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") handleRenameProfile(profile.id);
+                            if (e.key === "Enter") handleRenameProfile(profile.id).catch(() => {});
                             if (e.key === "Escape") setEditingId(null);
                           }}
-                          onBlur={() => handleRenameProfile(profile.id)}
+                          onBlur={() => handleRenameProfile(profile.id).catch(() => {})}
                           onClick={(e) => e.stopPropagation()}
                           className="input-field text-sm w-full py-1"
                           autoFocus
@@ -405,18 +413,20 @@ export default function ConfigManager() {
                             setEditName(profile.name);
                           }
                         }}
-                        className={`p-1 rounded-md transition-colors ${isEditing ? "text-accent-400" : "text-surface-600 hover:text-surface-300"
-                          }`}
+                        className={`p-1 rounded-md transition-colors ${
+                          isEditing ? "text-accent-400" : "text-surface-600 hover:text-surface-300"
+                        }`}
                       >
                         <Edit3 size={12} />
                       </button>
                       {config.profiles.length > 1 && (
                         <button
-                          onClick={() => handleDeleteProfile(profile.id)}
-                          className={`p-1 rounded-md transition-colors ${confirmDeleteId === profile.id
-                            ? "text-danger-400 bg-danger-500/15"
-                            : "text-surface-600 hover:text-danger-400"
-                            }`}
+                          onClick={() => handleDeleteProfile(profile.id).catch(() => {})}
+                          className={`p-1 rounded-md transition-colors ${
+                            confirmDeleteId === profile.id
+                              ? "text-danger-400 bg-danger-500/15"
+                              : "text-surface-600 hover:text-danger-400"
+                          }`}
                           title={confirmDeleteId === profile.id ? "再次点击确认删除" : "删除"}
                         >
                           <Trash2 size={12} />
@@ -522,8 +532,9 @@ function ActionCard({
     <button
       onClick={onClick}
       disabled={loading || disabled}
-      className={`card flex items-center gap-3 active:scale-[0.98] ${disabled ? "opacity-50 cursor-not-allowed" : ""
-        }`}
+      className={`card flex items-center gap-3 active:scale-[0.98] ${
+        disabled ? "opacity-50 cursor-not-allowed" : ""
+      }`}
     >
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colorClasses}`}>
         {loading ? <Loader2 size={18} className="animate-spin" /> : icon}

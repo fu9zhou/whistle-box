@@ -72,6 +72,44 @@ export default function App() {
     }
   }, [error, clearError]);
 
+  useEffect(() => {
+    if (!setupDone) return;
+    let pending = false;
+    const refresh = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        await useAppStore.getState().refreshWhistleStatus();
+        await useAppStore.getState().refreshProxyStatus();
+      } finally {
+        pending = false;
+      }
+    };
+    void refresh();
+    const timer = setInterval(refresh, 8000);
+    return () => clearInterval(timer);
+  }, [setupDone]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+    import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<string>("operation-error", (event) =>
+          useAppStore.setState({ error: event.payload }),
+        ),
+      )
+      .then((fn) => {
+        if (disposed) fn();
+        else cleanup = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
+
   const renderPage = () => {
     switch (currentPage) {
       case "dashboard":

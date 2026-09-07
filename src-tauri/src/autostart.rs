@@ -10,8 +10,8 @@ pub async fn cmd_set_autostart(_app: tauri::AppHandle, enabled: bool) -> Result<
         .map_err(|e| format!("Failed to open registry: {}", e))?;
 
     if enabled {
-        let exe_path = std::env::current_exe()
-            .map_err(|e| format!("Failed to get exe path: {}", e))?;
+        let exe_path =
+            std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
         let exe_str = format!("\"{}\" --autostart", exe_path.display());
         log::info!("Setting autostart registry: WhistleBox = {}", exe_str);
         run_key

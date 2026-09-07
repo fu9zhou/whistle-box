@@ -38,14 +38,14 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
 
   useEffect(() => {
     const initialDelay = setTimeout(() => {
-      refreshWhistleStatus().catch(() => { });
-      refreshProxyStatus().catch(() => { });
+      refreshWhistleStatus().catch(() => {});
+      refreshProxyStatus().catch(() => {});
     }, 1500);
 
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") {
-        refreshWhistleStatus().catch(() => { });
-        refreshProxyStatus().catch(() => { });
+        refreshWhistleStatus().catch(() => {});
+        refreshProxyStatus().catch(() => {});
       }
     }, 8000);
 
@@ -119,12 +119,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           >
             <div className="flex items-start justify-between mb-4">
               <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center ${proxyStatus?.mode === "global"
+                className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  proxyStatus?.mode === "global"
                     ? "bg-emerald-500/15 text-emerald-400"
                     : proxyStatus?.mode === "rule"
                       ? "bg-blue-500/15 text-blue-400"
                       : "bg-surface-800 text-surface-500"
-                  }`}
+                }`}
               >
                 <Globe size={20} />
               </div>
@@ -136,12 +137,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div className="text-xs text-surface-500 mb-1">代理状态</div>
             <div className="flex items-center gap-2">
               <span
-                className={`w-2 h-2 rounded-full ${proxyStatus?.mode === "global"
+                className={`w-2 h-2 rounded-full ${
+                  proxyStatus?.mode === "global"
                     ? "bg-emerald-400"
                     : proxyStatus?.mode === "rule"
                       ? "bg-blue-400"
                       : "bg-surface-500"
-                  }`}
+                }`}
               />
               <span className="text-lg font-semibold text-surface-200">{proxyModeLabel}</span>
             </div>
@@ -158,10 +160,11 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
           >
             <div className="flex items-start justify-between mb-4">
               <div
-                className={`w-10 h-10 rounded-xl flex items-center justify-center ${whistleAlive
+                className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                  whistleAlive
                     ? "bg-accent-500/15 text-accent-400"
                     : "bg-surface-800 text-surface-500"
-                  }`}
+                }`}
               >
                 <Server size={20} />
               </div>
@@ -173,12 +176,13 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <div className="text-xs text-surface-500 mb-1">Whistle</div>
             <div className="flex items-center gap-2">
               <span
-                className={`status-dot ${whistleAlive
+                className={`status-dot ${
+                  whistleAlive
                     ? "status-dot--active"
                     : whistleStatus?.running
                       ? "status-dot--warning"
                       : "status-dot--inactive"
-                  }`}
+                }`}
               />
               <span className="text-lg font-semibold text-surface-200">
                 {config?.whistle?.mode === "embedded"

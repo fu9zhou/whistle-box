@@ -1,40 +1,18 @@
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
-
-$configDir = Join-Path $env:APPDATA "WhistleBox"
-$configFile = Join-Path $configDir "config.json"
-
-$proc = Get-Process -Name "whistle-box" -ErrorAction SilentlyContinue
-if ($proc) {
-    Write-Host "[*] Closing WhistleBox..." -ForegroundColor Yellow
-    $proc | Stop-Process -Force
-    Start-Sleep -Seconds 1
+param([Parameter(Mandatory=$true)][string]$Executable)
+$ErrorActionPreference = 'Stop'
+$exe = (Resolve-Path -LiteralPath $Executable).Path
+if ([IO.Path]::GetFileName($exe) -ne 'whistle-box.exe') { throw 'Select the installed whistle-box.exe.' }
+$shutdown = Start-Process -FilePath $exe -ArgumentList '--shutdown','--remove-autostart' -WindowStyle Hidden -PassThru
+if (-not $shutdown.WaitForExit(15000)) { throw 'Application did not finish cleanup. Exit it from the tray, then retry.' }
+Start-Sleep -Seconds 3
+$running = Get-Process -Name 'whistle-box' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
+if ($running) { throw 'Application is still running. No files were changed.' }
+$allowed = [IO.Path]::GetFullPath((Join-Path $env:APPDATA 'WhistleBox'))
+$file = [IO.Path]::GetFullPath((Join-Path $allowed 'config.json'))
+if ([IO.Path]::GetDirectoryName($file) -ne $allowed) { throw 'Invalid reset path.' }
+if (Test-Path -LiteralPath $file) {
+    $backup = Join-Path $allowed ('config.backup.' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff') + '.json')
+    Move-Item -LiteralPath $file -Destination $backup
+    Write-Host "Settings backed up: $backup"
 }
-
-$conn = Get-NetTCPConnection -LocalPort 18899 -State Listen -ErrorAction SilentlyContinue
-if ($conn) {
-    foreach ($c in $conn) {
-        $p = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue
-        if ($p -and ($p.ProcessName -match 'node|whistle-box')) {
-            Write-Host "[*] Killing $($p.ProcessName) on port 18899 (PID: $($p.Id))..." -ForegroundColor Yellow
-            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
-if (Test-Path $configFile) {
-    Remove-Item $configFile -Force
-    Write-Host "[OK] Config deleted: $configFile" -ForegroundColor Green
-} else {
-    Write-Host "[--] Config file not found, nothing to delete" -ForegroundColor Gray
-}
-
-$whistleDataDir = Join-Path $env:USERPROFILE ".WhistleBoxData"
-if (Test-Path $whistleDataDir) {
-    Remove-Item $whistleDataDir -Recurse -Force
-    Write-Host "[OK] Whistle data dir cleaned: $whistleDataDir" -ForegroundColor Green
-}
-
-Write-Host ""
-Write-Host "Reset complete. Restart WhistleBox to see the setup wizard." -ForegroundColor Cyan
-Write-Host ""
+Write-Host 'Reset complete. Rules, certificates and other Whistle installations are preserved.'

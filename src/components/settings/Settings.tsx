@@ -1,3 +1,4 @@
+import { useAppStore } from "../../stores/appStore";
 import {
   Server,
   Key,
@@ -160,14 +161,14 @@ export default function Settings() {
             <div className="flex gap-2">
               <ModeButton
                 active={s.form.whistleMode === "embedded"}
-                onClick={s.handleSwitchToEmbedded}
+                onClick={() => s.handleSwitchToEmbedded().catch(() => {})}
                 color="accent"
                 label="内置模式"
                 sublabel="使用内置 Whistle，自动管理"
               />
               <ModeButton
                 active={s.form.whistleMode === "external"}
-                onClick={s.handleSwitchToExternal}
+                onClick={() => s.handleSwitchToExternal().catch(() => {})}
                 color="blue"
                 label="外部模式"
                 sublabel="连接外部 Whistle 实例"
@@ -369,6 +370,7 @@ export default function Settings() {
                 onClick={async () => {
                   try {
                     const { relaunch } = await import("@tauri-apps/plugin-process");
+                    await useAppStore.getState().stopWhistle();
                     await relaunch();
                   } catch (e) {
                     console.error("Failed to relaunch:", e);
@@ -482,10 +484,11 @@ export default function Settings() {
       {s.saveToast && (
         <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
           <div
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium shadow-lg ${(s.needsWhistleRestart && s.embeddedRunning) || s.needsAppRestart
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium shadow-lg ${
+              (s.needsWhistleRestart && s.embeddedRunning) || s.needsAppRestart
                 ? "bg-warning-500/90 text-white"
                 : "bg-emerald-600/90 text-white"
-              }`}
+            }`}
           >
             <CheckCircle2 size={14} />
             {s.saveToast}

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAppStore, type AppConfig } from "../../stores/appStore";
-import { buildFallbackConfig, DEFAULT_WHISTLE_PORT, DEFAULT_EXTERNAL_PORT } from "../../defaults";
+import { DEFAULT_WHISTLE_PORT, DEFAULT_EXTERNAL_PORT } from "../../defaults";
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -26,7 +26,6 @@ interface SetupWizardProps {
 export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const config = useAppStore((s) => s.config);
   const startWhistle = useAppStore((s) => s.startWhistle);
-  const stopWhistle = useAppStore((s) => s.stopWhistle);
   const startAuthProxy = useAppStore((s) => s.startAuthProxy);
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<"embedded" | "external">("embedded");
@@ -63,6 +62,10 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   };
 
   const [configSaved, setConfigSaved] = useState(false);
+  useEffect(() => {
+    setConfigSaved(false);
+    setCertAlreadyInstalled(null);
+  }, [mode, host, port, username, password]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const loadConfig = useAppStore((s) => s.loadConfig);
 
@@ -92,59 +95,33 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         external_password:
           mode === "external" ? password : (config.app_settings.external_password ?? ""),
       },
-      setup_completed: markComplete,
+      setup_completed: false,
     };
 
     try {
       await invoke("cmd_save_config", { config: newConfig });
+      await startWhistle();
+      await startAuthProxy();
+      if (markComplete)
+        await invoke("cmd_save_config", { config: { ...newConfig, setup_completed: true } });
+      await loadConfig();
+      setConfigSaved(true);
+      await checkCertStatus();
+      return true;
     } catch (e) {
       setSaveError(String(e));
-      setFinishing(false);
       return false;
+    } finally {
+      setFinishing(false);
     }
-
-    if (markComplete) {
-      await loadConfig();
-    }
-
-    if (mode === "embedded" && !configSaved) {
-      try {
-        await stopWhistle();
-        await new Promise((r) => setTimeout(r, 1000));
-        await startWhistle();
-        await startAuthProxy();
-      } catch (e) {
-        console.error("Failed to start whistle/auth:", e);
-      }
-    } else if (mode === "external" && !configSaved) {
-      try {
-        await startAuthProxy();
-      } catch (e) {
-        console.error("Failed to start auth proxy:", e);
-      }
-    }
-
-    setConfigSaved(true);
-    setFinishing(false);
-    return true;
   };
 
   const handleFinish = async () => {
     if (finishing) return;
     setSaveError(null);
     if (!config) {
-      const fallbackConfig: AppConfig = buildFallbackConfig();
-      setFinishing(true);
-      try {
-        await invoke("cmd_save_config", { config: fallbackConfig });
-        await loadConfig();
-      } catch (e) {
-        setSaveError(String(e));
-        setFinishing(false);
-        return;
-      }
-      setFinishing(false);
-      onComplete();
+      await loadConfig();
+      setSaveError("请重试，等待配置加载完成");
       return;
     }
     const ok = await saveAndStart(true);
@@ -166,12 +143,13 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           {Array.from({ length: totalSteps }, (_, i) => (
             <div
               key={i}
-              className={`h-1.5 rounded-full transition-all ${i === step
+              className={`h-1.5 rounded-full transition-all ${
+                i === step
                   ? "w-8 bg-accent-500"
                   : i < step
                     ? "w-6 bg-accent-700"
                     : "w-6 bg-surface-700"
-                }`}
+              }`}
             />
           ))}
         </div>
@@ -188,10 +166,11 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 <div className="flex gap-3">
                   <button
                     onClick={() => handleModeChange("embedded")}
-                    className={`flex-1 p-4 rounded-lg border text-left transition-all ${mode === "embedded"
+                    className={`flex-1 p-4 rounded-lg border text-left transition-all ${
+                      mode === "embedded"
                         ? "bg-accent-950/40 border-accent-700/30"
                         : "bg-surface-900/50 border-surface-800 hover:border-surface-700"
-                      }`}
+                    }`}
                   >
                     <div
                       className={`font-medium text-sm ${mode === "embedded" ? "text-accent-400" : "themed-text-secondary"}`}
@@ -204,10 +183,11 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                   </button>
                   <button
                     onClick={() => handleModeChange("external")}
-                    className={`flex-1 p-4 rounded-lg border text-left transition-all ${mode === "external"
+                    className={`flex-1 p-4 rounded-lg border text-left transition-all ${
+                      mode === "external"
                         ? "bg-blue-950/40 border-blue-700/30"
                         : "bg-surface-900/50 border-surface-800 hover:border-surface-700"
-                      }`}
+                    }`}
                   >
                     <div
                       className={`font-medium text-sm ${mode === "external" ? "text-blue-400" : "themed-text-secondary"}`}
@@ -238,7 +218,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                       onChange={(e) =>
                         setPort(
                           parseInt(e.target.value, 10) ||
-                          (mode === "embedded" ? DEFAULT_WHISTLE_PORT : DEFAULT_EXTERNAL_PORT),
+                            (mode === "embedded" ? DEFAULT_WHISTLE_PORT : DEFAULT_EXTERNAL_PORT),
                         )
                       }
                       className="input-field w-full font-mono text-sm"
@@ -451,7 +431,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                     </div>
 
                     <div className="text-[11px] text-surface-300 bg-accent-950/30 border border-accent-800/20 rounded-lg px-3 py-2.5 text-center leading-relaxed">
-                      安装证书需要管理员权限，系统可能弹出确认提示
+                      证书仅安装到当前用户的受信任根证书存储区
                       <br />
                       也可以稍后在设置中安装
                     </div>

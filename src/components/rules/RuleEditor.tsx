@@ -21,6 +21,7 @@ export default function RuleEditor() {
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingSaveCountRef = useRef(0);
   const saveRevisionRef = useRef(0);
+  const pendingSaveRef = useRef<(() => void) | null>(null);
 
   const enqueueSave = useCallback((task: () => Promise<void>) => {
     pendingSaveCountRef.current += 1;
@@ -33,18 +34,21 @@ export default function RuleEditor() {
         if (pendingSaveCountRef.current === 0) {
           savePendingRef.current = false;
         }
-      });
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      pendingSaveRef.current?.();
+      pendingSaveRef.current = null;
       if (deleteTimerRef.current) clearTimeout(deleteTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (config && !savePendingRef.current) {
+    if (config && !savePendingRef.current && !pendingSaveRef.current) {
       const profile = config.profiles.find((p) => p.id === config.active_profile_id);
       setLocalRules(profile?.rules ?? []);
       configLoadedRef.current = true;
@@ -57,12 +61,14 @@ export default function RuleEditor() {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       const revision = ++saveRevisionRef.current;
       const targetProfileId = configRef.current.active_profile_id;
-      saveTimerRef.current = setTimeout(async () => {
+      const submit = () => {
+        pendingSaveRef.current = null;
         enqueueSave(async () => {
           const latestConfig = configRef.current;
           if (!latestConfig) return;
           if (revision !== saveRevisionRef.current) return;
-          if (latestConfig.active_profile_id !== targetProfileId) return;
+          if (!latestConfig.profiles.some((p) => p.id === targetProfileId))
+            throw new Error("目标配置已被删除，规则未保存");
           const newConfig: AppConfig = {
             ...latestConfig,
             profiles: latestConfig.profiles.map((p) =>
@@ -73,7 +79,9 @@ export default function RuleEditor() {
           if (revision !== saveRevisionRef.current) return;
           await refreshPac();
         });
-      }, 800);
+      };
+      pendingSaveRef.current = submit;
+      saveTimerRef.current = setTimeout(submit, 800);
     },
     [saveConfig, refreshPac, enqueueSave],
   );

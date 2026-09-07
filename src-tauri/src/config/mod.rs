@@ -3,7 +3,7 @@ use std::fs;
 use std::net::IpAddr;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WhistleConnection {
     pub mode: String,
     pub host: String,
@@ -39,7 +39,7 @@ impl Default for WhistleConnection {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     #[serde(default = "default_true")]
     pub minimize_to_tray: bool,
@@ -65,14 +65,26 @@ pub struct AppSettings {
     pub external_password: String,
 }
 
-fn default_true() -> bool { true }
-fn default_false() -> bool { false }
-fn default_theme() -> String { "dark".to_string() }
-fn default_tray_click() -> String { "show_window".to_string() }
-fn default_external_host() -> String { "127.0.0.1".to_string() }
-fn default_external_port() -> u16 { 8899 }
+fn default_true() -> bool {
+    true
+}
+fn default_false() -> bool {
+    false
+}
+fn default_theme() -> String {
+    "dark".to_string()
+}
+fn default_tray_click() -> String {
+    "show_window".to_string()
+}
+fn default_external_host() -> String {
+    "127.0.0.1".to_string()
+}
+fn default_external_port() -> u16 {
+    8899
+}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProxyRule {
     pub id: String,
     pub pattern: String,
@@ -80,14 +92,14 @@ pub struct ProxyRule {
     pub comment: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Profile {
     pub id: String,
     pub name: String,
     pub rules: Vec<ProxyRule>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppConfig {
     pub whistle: WhistleConnection,
     pub proxy_mode: String,
@@ -145,70 +157,40 @@ impl Default for AppSettings {
 }
 
 impl AppConfig {
-    fn config_path() -> PathBuf {
-        let base = dirs::config_dir()
-            .or_else(|| std::env::var("APPDATA").ok().map(PathBuf::from))
-            .unwrap_or_else(|| {
-                log::warn!("config_dir() unavailable, falling back to exe parent");
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-                    .unwrap_or_else(|| PathBuf::from("."))
-            });
-        let dir = base.join("WhistleBox");
-        if let Err(e) = fs::create_dir_all(&dir) {
-            log::error!("Failed to create config dir {:?}: {}", dir, e);
-        }
+    pub fn config_path() -> PathBuf {
+        let dir = crate::utils::app_data_dir();
+        let _ = fs::create_dir_all(&dir);
         dir.join("config.json")
     }
 
     pub fn load() -> Result<Self, String> {
         let path = Self::config_path();
         if !path.exists() {
-            log::info!("Config file not found, creating default: {:?}", path);
-            let default = Self::default();
-            default.save()?;
-            return Ok(default);
+            let config = Self::default();
+            config.save()?;
+            return Ok(config);
         }
         let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        match serde_json::from_str::<Self>(&data) {
-            Ok(config) => {
+        let parsed = serde_json::from_str::<Self>(&data)
+            .map_err(|e| e.to_string())
+            .and_then(|config| {
                 validate_config(&config)?;
-                log::info!("Config loaded: setup_completed={}", config.setup_completed);
                 Ok(config)
-            }
-            Err(e) => {
-                log::error!("Config deserialization failed: {}. Attempting partial recovery.", e);
-                let backup_path = path.with_extension(format!(
-                    "corrupt.{}.json",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs()
-                ));
-                if let Err(be) = fs::copy(&path, &backup_path) {
-                    log::warn!("Failed to backup corrupt config: {}", be);
-                } else {
-                    log::info!("Backed up corrupt config to {:?}", backup_path);
-                }
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&data) {
-                    let setup_completed = val.get("setup_completed")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    if setup_completed {
-                        log::info!("Recovered setup_completed=true from corrupted config");
-                        let mut default = Self::default();
-                        default.setup_completed = true;
-                        default.save()?;
-                        return Ok(default);
-                    }
-                }
-                Err(e.to_string())
-            }
+            });
+        if parsed.is_err() {
+            let id = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            fs::copy(&path, path.with_extension(format!("invalid.{id}.json")))
+                .map_err(|e| format!("Cannot preserve invalid config: {e}"))?;
         }
+        parsed
     }
 
     pub fn save(&self) -> Result<(), String> {
+        static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _save = SAVE_LOCK.lock().map_err(|e| e.to_string())?;
         let path = Self::config_path();
         let data = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         let tmp_path = path.with_extension("json.tmp");
@@ -217,7 +199,9 @@ impl AppConfig {
     }
 
     pub fn get_active_profile(&self) -> Option<&Profile> {
-        self.profiles.iter().find(|p| p.id == self.active_profile_id)
+        self.profiles
+            .iter()
+            .find(|p| p.id == self.active_profile_id)
     }
 
     pub fn get_active_rules(&self) -> Vec<&ProxyRule> {
@@ -230,7 +214,10 @@ impl AppConfig {
         if self.whistle.mode == "embedded" {
             (self.whistle.host.clone(), self.whistle.port)
         } else {
-            (self.app_settings.external_host.clone(), self.app_settings.external_port)
+            (
+                self.app_settings.external_host.clone(),
+                self.app_settings.external_port,
+            )
         }
     }
 
@@ -238,7 +225,10 @@ impl AppConfig {
         if self.whistle.mode == "embedded" {
             (self.whistle.username.clone(), self.whistle.password.clone())
         } else {
-            (self.app_settings.external_username.clone(), self.app_settings.external_password.clone())
+            (
+                self.app_settings.external_username.clone(),
+                self.app_settings.external_password.clone(),
+            )
         }
     }
 }
@@ -320,6 +310,30 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     if config.app_settings.external_port == 0 {
         return Err("External whistle port cannot be 0".to_string());
     }
+    let mut ports = std::collections::BTreeSet::new();
+    let mut local_ports = vec![config.auth_proxy_port, config.pac_server_port];
+    if config.whistle.mode == "embedded" {
+        local_ports.push(config.whistle.port);
+        if config.whistle.socks_port > 0 {
+            local_ports.push(config.whistle.socks_port);
+        }
+    } else if is_valid_loopback_host(&config.app_settings.external_host) {
+        local_ports.push(config.app_settings.external_port);
+    }
+    if local_ports.into_iter().any(|port| !ports.insert(port)) {
+        return Err("Whistle、SOCKS、认证代理和 PAC 的本地监听端口不得重复".into());
+    }
+    let mut profile_ids = std::collections::BTreeSet::new();
+    for profile in &config.profiles {
+        if !profile_ids.insert(&profile.id) {
+            return Err("Profile id must be unique".into());
+        }
+        for rule in &profile.rules {
+            if !crate::proxy::pac::is_valid_domain_pattern(&rule.pattern) {
+                return Err(format!("无效域名规则: {}", rule.pattern));
+            }
+        }
+    }
     if config.profiles.is_empty() {
         return Err("At least one profile is required".to_string());
     }
@@ -332,7 +346,9 @@ fn validate_config(config: &AppConfig) -> Result<(), String> {
     }
 
     if config.whistle.mode == "embedded" && !is_valid_loopback_host(&config.whistle.host) {
-        return Err("Embedded mode only allows loopback host (127.0.0.1/::1/localhost)".to_string());
+        return Err(
+            "Embedded mode only allows loopback host (127.0.0.1/::1/localhost)".to_string(),
+        );
     }
     if !is_private_or_loopback_host(&config.app_settings.external_host) {
         return Err("External whistle host must be localhost or private network IP".to_string());
@@ -358,19 +374,151 @@ pub async fn cmd_get_config(state: tauri::State<'_, AppState>) -> Result<AppConf
     Ok(config.clone())
 }
 
+// Apply only fields changed relative to the caller's snapshot. Conflicting edits
+// must be retried, never silently overwrite a newer tray/background update.
+fn merge_changes(
+    current: &mut serde_json::Value,
+    base: &serde_json::Value,
+    next: &serde_json::Value,
+) -> Result<(), String> {
+    if next == base {
+        return Ok(());
+    }
+    if let (Some(current), Some(base), Some(next)) =
+        (current.as_object_mut(), base.as_object(), next.as_object())
+    {
+        for (key, value) in next {
+            if let (Some(target), Some(previous)) = (current.get_mut(key), base.get(key)) {
+                merge_changes(target, previous, value)?;
+            } else {
+                current.insert(key.clone(), value.clone());
+            }
+        }
+    } else {
+        if current != base && current != next {
+            return Err("配置已被其他操作更新，请重新加载后重试".into());
+        }
+        *current = next.clone();
+    }
+    Ok(())
+}
+
+async fn apply_services(
+    handle: &tauri::AppHandle,
+    state: &AppState,
+    old: &AppConfig,
+    new: &AppConfig,
+    was_running: bool,
+    proxy_mode: &str,
+) -> Result<(), String> {
+    let target_changed = old.whistle != new.whistle
+        || old.active_endpoint() != new.active_endpoint()
+        || old.active_credentials() != new.active_credentials();
+    if target_changed {
+        crate::proxy::clear_system_proxy().await?;
+        *state.proxy_mode.lock().await = "direct".into();
+        if old.whistle != new.whistle {
+            crate::whistle::stop_internal(state).await?;
+        }
+    }
+    if was_running && new.whistle.mode == "embedded" {
+        crate::whistle::start_internal(handle, state).await?;
+    }
+    let (host, port) = new.active_endpoint();
+    let (user, pass) = new.active_credentials();
+    crate::auth::start_auth_proxy_internal(
+        new.auth_proxy_port,
+        host,
+        port,
+        user,
+        pass,
+        new.app_settings.local_auth_bypass,
+    )
+    .await?;
+    *state.auth_proxy_port.lock().await = new.auth_proxy_port;
+    if proxy_mode == "rule" {
+        crate::proxy::pac::start_for_config(new, state).await?;
+    } else {
+        if old.pac_server_port != new.pac_server_port {
+            crate::proxy::pac::stop_pac_server().await;
+        }
+        let rules = new
+            .get_active_rules()
+            .into_iter()
+            .map(|r| (r.pattern.clone(), r.enabled))
+            .collect::<Vec<_>>();
+        let (host, port) = new.active_endpoint();
+        crate::proxy::pac::update_pac_content(&rules, &host, port).await;
+    }
+    if proxy_mode != "direct" {
+        crate::proxy::set_proxy_mode_internal(state, proxy_mode).await?;
+    }
+    *state.pac_server_port.lock().await = new.pac_server_port;
+    state.minimize_to_tray.store(
+        new.app_settings.minimize_to_tray,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    Ok(())
+}
+
+pub async fn apply_config(
+    handle: &tauri::AppHandle,
+    state: &AppState,
+    next: AppConfig,
+    base: Option<AppConfig>,
+) -> Result<AppConfig, String> {
+    state
+        .user_action
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let _operation = state.operations.lock().await;
+    let old = state.config.lock().await.clone();
+    let next = if let Some(base) = base {
+        let mut merged = serde_json::to_value(&old).map_err(|e| e.to_string())?;
+        merge_changes(
+            &mut merged,
+            &serde_json::to_value(base).map_err(|e| e.to_string())?,
+            &serde_json::to_value(next).map_err(|e| e.to_string())?,
+        )?;
+        serde_json::from_value(merged).map_err(|e| e.to_string())?
+    } else {
+        next
+    };
+    validate_config(&next)?;
+    let was_running = crate::whistle::process::OWNED.lock().await.is_some();
+    #[cfg(windows)]
+    if !crate::proxy::ownership::is_owned()? {
+        *state.proxy_mode.lock().await = "direct".into();
+    }
+    let mode = state.proxy_mode.lock().await.clone();
+    next.save()?;
+    *state.config.lock().await = next.clone();
+    if let Err(error) = apply_services(handle, state, &old, &next, was_running, &mode).await {
+        *state.config.lock().await = old.clone();
+        let rollback_file = old.save();
+        let rollback_services =
+            apply_services(handle, state, &next, &old, was_running, &mode).await;
+        return Err(format!(
+            "应用配置失败: {error}; 配置恢复: {}; 服务恢复: {}",
+            rollback_file.err().unwrap_or_else(|| "成功".into()),
+            rollback_services.err().unwrap_or_else(|| "成功".into())
+        ));
+    }
+    crate::tray::update_tray(
+        handle,
+        &state.proxy_mode.lock().await.clone(),
+        *state.whistle_running.lock().await,
+    );
+    Ok(next)
+}
+
 #[tauri::command]
 pub async fn cmd_save_config(
+    handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     config: AppConfig,
-) -> Result<(), String> {
-    validate_config(&config)?;
-    config.save()?;
-    state
-        .minimize_to_tray
-        .store(config.app_settings.minimize_to_tray, std::sync::atomic::Ordering::Relaxed);
-    let mut current = state.config.lock().await;
-    *current = config;
-    Ok(())
+    base_config: Option<AppConfig>,
+) -> Result<AppConfig, String> {
+    apply_config(&handle, &state, config, base_config).await
 }
 
 #[tauri::command]
@@ -386,40 +534,33 @@ pub async fn cmd_export_config(
 
 #[tauri::command]
 pub async fn cmd_import_config(
+    handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     path: String,
 ) -> Result<AppConfig, String> {
     validate_user_path(&path, &[".json"])?;
     let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     let config: AppConfig = serde_json::from_str(&data).map_err(|e| e.to_string())?;
-    validate_config(&config)?;
-    config.save()?;
-    let mut current = state.config.lock().await;
-    *current = config.clone();
-    Ok(config)
+    apply_config(&handle, &state, config, None).await
 }
 
 #[tauri::command]
-pub async fn cmd_get_profiles(
-    state: tauri::State<'_, AppState>,
-) -> Result<Vec<Profile>, String> {
+pub async fn cmd_get_profiles(state: tauri::State<'_, AppState>) -> Result<Vec<Profile>, String> {
     let config = state.config.lock().await;
     Ok(config.profiles.clone())
 }
 
 #[tauri::command]
 pub async fn cmd_switch_profile(
+    handle: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     profile_id: String,
 ) -> Result<(), String> {
-    let mut config = state.config.lock().await;
-    if config.profiles.iter().any(|p| p.id == profile_id) {
-        config.active_profile_id = profile_id;
-        config.save()?;
-        Ok(())
-    } else {
-        Err("Profile not found".to_string())
-    }
+    let base = state.config.lock().await.clone();
+    let mut next = base.clone();
+    next.active_profile_id = profile_id;
+    apply_config(&handle, &state, next, Some(base)).await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -433,8 +574,11 @@ pub async fn cmd_export_whistle_rules(
     let (username, password) = config.active_credentials();
     drop(config);
 
-    let whistle_url = format!("http://{}:{}/cgi-bin/rules/export", host, port);
-    let client = reqwest::Client::builder().no_proxy().build()
+    let whistle_url = crate::utils::http_url(&host, port, "/cgi-bin/rules/export");
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
     let mut req = client.get(&whistle_url);
     if !username.is_empty() {
@@ -461,20 +605,28 @@ pub async fn cmd_import_whistle_rules(
     let (username, password) = config.active_credentials();
     drop(config);
 
-    let whistle_url = format!("http://{}:{}/cgi-bin/rules/import", host, port);
-    let client = reqwest::Client::builder().no_proxy().build()
+    let whistle_url = crate::utils::http_url(&host, port, "/cgi-bin/rules/import");
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
-    let is_json = data.trim_start().starts_with('{');
-    let mut req = if is_json {
-        client.post(&whistle_url)
-            .header("Content-Type", "application/json")
-            .body(data)
+    let rules: serde_json::Value = if data.trim_start().starts_with('{') {
+        serde_json::from_str(&data).map_err(|e| format!("无效 JSON 规则文件: {e}"))?
     } else {
-        client.post(&whistle_url)
-            .header("Content-Type", "text/plain")
-            .body(data)
+        serde_json::json!({"Default": data})
     };
+    if !rules.is_object() {
+        return Err("规则文件必须是 JSON 对象或纯文本".into());
+    }
+    let part = reqwest::multipart::Part::text(rules.to_string())
+        .file_name("rules.json")
+        .mime_str("application/json")
+        .map_err(|e| e.to_string())?;
+    let mut req = client
+        .post(&whistle_url)
+        .multipart(reqwest::multipart::Form::new().part("rules", part));
     if !username.is_empty() {
         req = req.basic_auth(&username, Some(&password));
     }
@@ -489,11 +641,87 @@ pub async fn cmd_import_whistle_rules(
 
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(&resp_body) {
         if json.get("ec").and_then(|v| v.as_i64()).unwrap_or(0) != 0 {
-            let em = json.get("em").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            let em = json
+                .get("em")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
             return Err(format!("Whistle import failed: {}", em));
         }
     }
 
     log::info!("Whistle rules imported successfully");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_configuration_is_preserved_with_backup() {
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../.tooling/config-backup-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let previous = std::env::var_os("WHISTLEBOX_DATA_DIR");
+        std::env::set_var("WHISTLEBOX_DATA_DIR", &root);
+        let config = AppConfig {
+            active_profile_id: "missing-profile".into(),
+            ..Default::default()
+        };
+        let data = serde_json::to_string(&config).unwrap();
+        std::fs::write(root.join("config.json"), &data).unwrap();
+        let result = AppConfig::load();
+        if let Some(previous) = previous {
+            std::env::set_var("WHISTLEBOX_DATA_DIR", previous);
+        } else {
+            std::env::remove_var("WHISTLEBOX_DATA_DIR");
+        }
+        assert!(result.is_err());
+        assert_eq!(
+            std::fs::read_to_string(root.join("config.json")).unwrap(),
+            data
+        );
+        assert!(std::fs::read_dir(root).unwrap().any(|p| p
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .contains("invalid.")));
+    }
+    #[test]
+    fn concurrent_config_edits_merge_without_losing_newer_fields() {
+        let base = serde_json::json!({"proxy":"direct","port":8899});
+        let mut current = serde_json::json!({"proxy":"global","port":8899});
+        merge_changes(
+            &mut current,
+            &base,
+            &serde_json::json!({"proxy":"direct","port":9000}),
+        )
+        .unwrap();
+        assert_eq!(current, serde_json::json!({"proxy":"global","port":9000}));
+        assert!(merge_changes(
+            &mut current,
+            &base,
+            &serde_json::json!({"proxy":"rule","port":8899})
+        )
+        .is_err());
+    }
+    #[test]
+    fn refuses_overlapping_local_service_ports() {
+        let mut config = AppConfig::default();
+        config.auth_proxy_port = config.whistle.port;
+        assert!(validate_config(&config).is_err());
+        let mut config = AppConfig::default();
+        config.whistle.socks_port = config.pac_server_port;
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn defaults_and_remote_same_number_ports_are_valid() {
+        assert!(validate_config(&AppConfig::default()).is_ok());
+        let mut config = AppConfig::default();
+        config.whistle.mode = "external".into();
+        config.app_settings.external_host = "192.168.1.2".into();
+        config.app_settings.external_port = config.auth_proxy_port;
+        assert!(validate_config(&config).is_ok());
+    }
 }

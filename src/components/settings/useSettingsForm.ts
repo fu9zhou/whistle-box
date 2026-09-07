@@ -94,6 +94,7 @@ export function useSettingsForm() {
   const saveRevisionRef = useRef(0);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const testTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const pendingSaveRef = useRef<(() => void) | null>(null);
 
   const enqueueSave = useCallback((task: () => Promise<void>) => {
     pendingSaveCountRef.current += 1;
@@ -106,7 +107,8 @@ export function useSettingsForm() {
         if (pendingSaveCountRef.current === 0) {
           savePendingRef.current = false;
         }
-      });
+      })
+      .catch(() => {});
   }, []);
 
   const checkCertStatus = useCallback(() => {
@@ -122,13 +124,15 @@ export function useSettingsForm() {
     checkCertStatus();
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      pendingSaveRef.current?.();
+      pendingSaveRef.current = null;
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (testTimerRef.current) clearTimeout(testTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (config && !savePendingRef.current) {
+    if (config && !savePendingRef.current && !pendingSaveRef.current) {
       const loaded: SettingsFormState = {
         whistleMode: config.whistle.mode as "embedded" | "external",
         whistleHost: config.whistle.host,
@@ -188,8 +192,8 @@ export function useSettingsForm() {
       await saveConfig(newConfig);
       if (revision !== saveRevisionRef.current) return;
       setSavedForm(newForm);
-      if (changedWhistle) setNeedsWhistleRestart(true);
-      if (changedApp) setNeedsAppRestart(true);
+      if (changedWhistle) setNeedsWhistleRestart(false);
+      if (changedApp) setNeedsAppRestart(false);
       if (needsProxyUpdate) {
         await startAuthProxy();
       }
@@ -239,18 +243,16 @@ export function useSettingsForm() {
         newForm.username !== config.whistle.username ||
         newForm.password !== config.whistle.password ||
         newForm.externalHost !== (config.app_settings?.external_host || "127.0.0.1") ||
-        newForm.externalPort !== (config.app_settings?.external_port || 8899);
+        newForm.externalPort !== (config.app_settings?.external_port || 8899) ||
+        newForm.externalUsername !== (config.app_settings?.external_username || "") ||
+        newForm.externalPassword !== (config.app_settings?.external_password || "");
       const needsProxyUpdate = changedAuthBypass || changedProxyTarget;
 
-      const toastMsg =
-        changedWhistle && embeddedRunning
-          ? "设置已保存，需重启 Whistle 后生效"
-          : changedApp
-            ? "设置已保存，需重启应用后生效"
-            : "设置已保存";
+      const toastMsg = "设置已保存并应用";
 
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       const revision = ++saveRevisionRef.current;
+      pendingSaveRef.current = null;
 
       if (immediate) {
         enqueueSave(() =>
@@ -265,7 +267,8 @@ export function useSettingsForm() {
           ),
         );
       } else {
-        saveTimerRef.current = setTimeout(() => {
+        const submit = () => {
+          pendingSaveRef.current = null;
           enqueueSave(() =>
             doSave(
               newForm,
@@ -277,7 +280,9 @@ export function useSettingsForm() {
               revision,
             ),
           );
-        }, 800);
+        };
+        pendingSaveRef.current = submit;
+        saveTimerRef.current = setTimeout(submit, 800);
       }
     },
     [config, doSave, embeddedRunning, enqueueSave],
@@ -323,7 +328,15 @@ export function useSettingsForm() {
     setTesting(false);
   };
 
+  const cancelPendingSave = async () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    pendingSaveRef.current = null;
+    saveRevisionRef.current += 1;
+    await saveQueueRef.current;
+  };
+
   const handleRestartWhistle = async () => {
+    await cancelPendingSave();
     setWhistleRestarting(true);
     try {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -336,12 +349,14 @@ export function useSettingsForm() {
       await startWhistle();
       await startAuthProxy();
       setNeedsWhistleRestart(false);
+    } catch {
     } finally {
       setWhistleRestarting(false);
     }
   };
 
   const handleStartWhistle = async () => {
+    await cancelPendingSave();
     if (!config) return;
     setWhistleStarting(true);
     try {
@@ -351,12 +366,14 @@ export function useSettingsForm() {
       await startAuthProxy();
       await startWhistle();
       setNeedsWhistleRestart(false);
+    } catch {
     } finally {
       setWhistleStarting(false);
     }
   };
 
   const handleSwitchToEmbedded = async () => {
+    await cancelPendingSave();
     const newForm = { ...form, whistleMode: "embedded" as const };
     setForm(newForm);
     setNeedsWhistleRestart(false);
@@ -371,9 +388,7 @@ export function useSettingsForm() {
   };
 
   const handleSwitchToExternal = async () => {
-    if (embeddedRunning) {
-      await stopWhistle();
-    }
+    await cancelPendingSave();
     const newForm = { ...form, whistleMode: "external" as const };
     setForm(newForm);
     setNeedsWhistleRestart(false);
@@ -383,6 +398,15 @@ export function useSettingsForm() {
     await saveConfig(newConfig);
     await startAuthProxy();
   };
+
+  useEffect(() => {
+    checkCertStatus();
+  }, [
+    whistleStatus?.uptime_check,
+    config?.whistle.storage_path,
+    config?.whistle.mode,
+    checkCertStatus,
+  ]);
 
   const handleResetForm = () => {
     const resetForm = {

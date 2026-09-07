@@ -1,4 +1,12 @@
-import { copyFileSync, existsSync, unlinkSync, renameSync, readFileSync, readdirSync, mkdirSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  unlinkSync,
+  renameSync,
+  readFileSync,
+  readdirSync,
+  mkdirSync,
+} from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 import { fileURLToPath } from "url";
@@ -41,7 +49,7 @@ const makensisDir =
   join(process.env.LOCALAPPDATA || "", "tauri", "NSIS");
 const makensis = join(makensisDir, "makensis.exe");
 
-const langFiles = ["SimpChinese.nsh", "English.nsh"];
+const langFiles = tauriConf.bundle.windows.nsis.languages.map((lang) => `${lang}.nsh`);
 
 for (const file of langFiles) {
   const src = join(customLangDir, file);

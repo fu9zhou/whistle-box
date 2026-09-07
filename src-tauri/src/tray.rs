@@ -39,16 +39,36 @@ fn generate_icon_rgba(r: u8, g: u8, b: u8) -> Vec<u8> {
     }
 
     let letter_w: [(usize, usize); 30] = [
-        (11,10),(12,11),(13,12),(14,13),(15,14),(16,13),(17,12),(18,11),(19,10),
-        (11,11),(13,13),(14,14),(15,15),(16,14),(17,13),(19,11),
-        (12,12),(18,12),
-        (14,15),(16,15),
-        (15,16),
-        (11,12),(19,12),
-        (12,13),(18,13),
-        (13,14),(17,14),
-        (14,16),(16,16),
-        (15,17),
+        (11, 10),
+        (12, 11),
+        (13, 12),
+        (14, 13),
+        (15, 14),
+        (16, 13),
+        (17, 12),
+        (18, 11),
+        (19, 10),
+        (11, 11),
+        (13, 13),
+        (14, 14),
+        (15, 15),
+        (16, 14),
+        (17, 13),
+        (19, 11),
+        (12, 12),
+        (18, 12),
+        (14, 15),
+        (16, 15),
+        (15, 16),
+        (11, 12),
+        (19, 12),
+        (12, 13),
+        (18, 13),
+        (13, 14),
+        (17, 14),
+        (14, 16),
+        (16, 16),
+        (15, 17),
     ];
 
     for &(px, py) in &letter_w {
@@ -95,13 +115,28 @@ fn build_menu(app: &AppHandle, current_mode: &str) -> tauri::Result<Menu<tauri::
     menu.append(&PredefinedMenuItem::separator(app)?)?;
 
     let direct_item = CheckMenuItem::with_id(
-        app, "mode_direct", "直连模式", true, current_mode == "direct", None::<&str>,
+        app,
+        "mode_direct",
+        "直连模式",
+        true,
+        current_mode == "direct",
+        None::<&str>,
     )?;
     let rule_item = CheckMenuItem::with_id(
-        app, "mode_rule", "规则代理", true, current_mode == "rule", None::<&str>,
+        app,
+        "mode_rule",
+        "规则代理",
+        true,
+        current_mode == "rule",
+        None::<&str>,
     )?;
     let global_item = CheckMenuItem::with_id(
-        app, "mode_global", "全局代理", true, current_mode == "global", None::<&str>,
+        app,
+        "mode_global",
+        "全局代理",
+        true,
+        current_mode == "global",
+        None::<&str>,
     )?;
     menu.append(&direct_item)?;
     menu.append(&rule_item)?;
@@ -109,7 +144,8 @@ fn build_menu(app: &AppHandle, current_mode: &str) -> tauri::Result<Menu<tauri::
 
     menu.append(&PredefinedMenuItem::separator(app)?)?;
 
-    let whistle_item = MenuItem::with_id(app, "open_whistle", "打开 Whistle 界面", true, None::<&str>)?;
+    let whistle_item =
+        MenuItem::with_id(app, "open_whistle", "打开 Whistle 界面", true, None::<&str>)?;
     menu.append(&whistle_item)?;
 
     let settings_item = MenuItem::with_id(app, "open_settings", "设置", true, None::<&str>)?;
@@ -195,11 +231,14 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 };
                 let auth_port = *state.auth_proxy_port.lock().await;
                 let (url, target_host) = if local_auth_bypass {
-                    (format!("http://127.0.0.1:{}", auth_port), "127.0.0.1".to_string())
+                    (
+                        format!("http://127.0.0.1:{}", auth_port),
+                        "127.0.0.1".to_string(),
+                    )
                 } else if whistle_mode == "embedded" {
-                    (format!("http://{}:{}", w_host, w_port), w_host)
+                    (crate::utils::http_url(&w_host, w_port, ""), w_host)
                 } else {
-                    (format!("http://{}:{}", ext_host, ext_port), ext_host)
+                    (crate::utils::http_url(&ext_host, ext_port, ""), ext_host)
                 };
 
                 if !crate::utils::is_private_or_loopback(&target_host) {
@@ -208,18 +247,26 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
                 }
 
                 #[cfg(target_os = "windows")]
-                { let _ = std::process::Command::new("cmd").args(["/c", "start", "", &url]).creation_flags(0x08000000).spawn(); }
+                {
+                    let _ = std::process::Command::new("cmd")
+                        .args(["/c", "start", "", &url])
+                        .creation_flags(0x08000000)
+                        .spawn();
+                }
                 #[cfg(target_os = "macos")]
-                { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+                {
+                    let _ = std::process::Command::new("open").arg(&url).spawn();
+                }
                 #[cfg(target_os = "linux")]
-                { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                }
             });
         }
         "quit" => {
             let handle = app.clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
-                let _ = crate::proxy::clear_system_proxy().await;
                 let _ = crate::whistle::cmd_stop_whistle(state.clone()).await;
                 handle.exit(0);
             });
@@ -238,11 +285,19 @@ async fn handle_left_click(app: &AppHandle) {
 
     match action.as_str() {
         "toggle_direct_rule" => {
-            let next = if current_mode == "rule" { "direct" } else { "rule" };
+            let next = if current_mode == "rule" {
+                "direct"
+            } else {
+                "rule"
+            };
             switch_proxy_mode(app, next).await;
         }
         "toggle_direct_global" => {
-            let next = if current_mode == "global" { "direct" } else { "global" };
+            let next = if current_mode == "global" {
+                "direct"
+            } else {
+                "global"
+            };
             switch_proxy_mode(app, next).await;
         }
         "cycle" => {
@@ -280,33 +335,12 @@ fn show_main_window(app: &AppHandle) {
 }
 
 async fn switch_proxy_mode(app: &AppHandle, mode: &str) {
-    let state = app.state::<AppState>();
-
-    if mode == "rule" {
-        let _ = crate::proxy::pac::cmd_start_pac_server(app.state::<AppState>()).await;
-    }
-
-    match crate::proxy::set_proxy_mode_internal(state.inner(), mode).await {
-        Ok(()) => {
-            log::info!("Tray: switched proxy mode to {}", mode);
-        }
-        Err(e) => {
-            log::error!("Tray: failed to switch proxy mode: {}", e);
-            return;
-        }
-    }
-
+    if let Err(e) =
+        crate::proxy::cmd_set_proxy_mode(app.clone(), app.state::<AppState>(), mode.into()).await
     {
-        let mut config = state.config.lock().await;
-        config.proxy_mode = mode.to_string();
-        config.app_settings.last_proxy_mode = mode.to_string();
-        if let Err(e) = config.save() {
-            log::warn!("Failed to persist proxy mode to disk: {}", e);
-        }
+        log::error!("Tray proxy switch failed: {e}");
+        let _ = app.emit("operation-error", e);
     }
-
-    let whistle_running = *state.whistle_running.lock().await;
-    update_tray(app, mode, whistle_running);
 }
 
 pub fn update_tray(app: &AppHandle, mode: &str, whistle_running: bool) {

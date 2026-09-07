@@ -13,7 +13,7 @@ export default function TitleBar() {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       const maximized = await getCurrentWindow().isMaximized();
       setIsMaximized(maximized);
-    } catch { }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function TitleBar() {
             else fn();
           });
       })
-      .catch(() => { });
+      .catch(() => {});
     return () => {
       mounted = false;
       unlisten?.();
@@ -41,7 +41,7 @@ export default function TitleBar() {
   useEffect(() => {
     import("@tauri-apps/api/app")
       .then(({ getVersion }) => getVersion().then((v) => setAppVersion(`v${v}`)))
-      .catch(() => { });
+      .catch(() => {});
   }, []);
 
   const handleMinimize = async () => {

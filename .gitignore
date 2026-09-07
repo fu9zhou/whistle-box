@@ -1,5 +1,7 @@
 # Dependencies
 node_modules
+.tooling/
+test-results/
 
 # Build output
 dist

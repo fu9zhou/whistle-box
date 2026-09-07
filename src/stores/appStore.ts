@@ -128,6 +128,8 @@ const getInitialTheme = (): "dark" | "light" => {
 };
 
 export const useAppStore = create<AppState>((set, get) => {
+  let whistleRefresh: Promise<void> | null = null;
+  let proxyRefresh: Promise<void> | null = null;
   const setError = (e: unknown) => set({ error: String(e) });
   const withLoading = async <T>(fn: () => Promise<T>): Promise<T> => {
     try {
@@ -145,6 +147,14 @@ export const useAppStore = create<AppState>((set, get) => {
       await fn();
     } catch (e) {
       setError(e);
+    }
+  };
+  const perform = async (fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (e) {
+      setError(e);
+      throw e;
     }
   };
 
@@ -181,11 +191,17 @@ export const useAppStore = create<AppState>((set, get) => {
 
     saveConfig: async (config: AppConfig) => {
       try {
-        await invoke("cmd_save_config", { config });
-        set({ config });
+        const saved = await invoke<AppConfig>("cmd_save_config", {
+          config,
+          baseConfig: get().config,
+        });
+        set({ config: saved || config });
+        const url = await invoke<string>("cmd_get_auth_proxy_url").catch(() => null);
+        if (url) set({ authProxyUrl: url });
       } catch (e) {
         console.error("saveConfig failed:", e);
         setError(e);
+        throw e;
       }
     },
 
@@ -197,7 +213,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     stopWhistle: async () => {
-      await quietly(async () => {
+      await perform(async () => {
         await invoke("cmd_stop_whistle");
         const prev = get().whistleStatus;
         set({
@@ -213,52 +229,44 @@ export const useAppStore = create<AppState>((set, get) => {
       });
     },
 
-    refreshWhistleStatus: async () => {
-      await quietly(async () => {
+    refreshWhistleStatus: () => {
+      whistleRefresh ??= quietly(async () => {
         const status = await invoke<WhistleStatus>("cmd_get_whistle_status");
         set({ whistleStatus: status });
+      }).finally(() => {
+        whistleRefresh = null;
       });
+      return whistleRefresh;
     },
 
     setProxyMode: async (mode: string) => {
-      try {
-        set({ loading: true, error: null });
-        if (mode === "rule") {
-          try {
-            await invoke("cmd_start_pac_server");
-          } catch (e) {
-            set({ error: `PAC 服务启动失败: ${e}`, loading: false });
-            return;
-          }
-        }
+      await withLoading(async () => {
         await invoke("cmd_set_proxy_mode", { mode });
         const proxyStatus = await invoke<ProxyStatus>("cmd_get_proxy_status");
-        set({ proxyStatus, loading: false });
-      } catch (e) {
-        set({ error: `切换代理模式失败: ${String(e)}`, loading: false });
-        try {
-          const proxyStatus = await invoke<ProxyStatus>("cmd_get_proxy_status");
-          set({ proxyStatus });
-        } catch {}
-      }
-    },
-
-    refreshProxyStatus: async () => {
-      await quietly(async () => {
-        const proxyStatus = await invoke<ProxyStatus>("cmd_get_proxy_status");
-        set({ proxyStatus });
+        const config = await invoke<AppConfig>("cmd_get_config");
+        set({ proxyStatus, config });
       });
     },
 
+    refreshProxyStatus: () => {
+      proxyRefresh ??= quietly(async () => {
+        const proxyStatus = await invoke<ProxyStatus>("cmd_get_proxy_status");
+        set({ proxyStatus });
+      }).finally(() => {
+        proxyRefresh = null;
+      });
+      return proxyRefresh;
+    },
+
     startAuthProxy: async () => {
-      await quietly(async () => {
+      await perform(async () => {
         const url = await invoke<string>("cmd_start_auth_proxy");
         set({ authProxyUrl: url });
       });
     },
 
     startPacServer: async () => {
-      await quietly(async () => {
+      await perform(async () => {
         await invoke<number>("cmd_start_pac_server");
       });
     },
@@ -268,17 +276,18 @@ export const useAppStore = create<AppState>((set, get) => {
         await invoke("cmd_refresh_pac");
       } catch (e) {
         set({ error: `刷新 PAC 规则失败: ${e}` });
+        throw e;
       }
     },
 
     exportConfig: async (path: string) => {
-      await quietly(async () => {
+      await perform(async () => {
         await invoke("cmd_export_config", { path });
       });
     },
 
     importConfig: async (path: string) => {
-      await quietly(async () => {
+      await perform(async () => {
         const config = await invoke<AppConfig>("cmd_import_config", { path });
         set({ config });
         await get().refreshPac();
@@ -286,19 +295,19 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     exportWhistleRules: async (path: string) => {
-      await quietly(async () => {
+      await perform(async () => {
         await invoke("cmd_export_whistle_rules", { path });
       });
     },
 
     importWhistleRules: async (path: string) => {
-      await quietly(async () => {
+      await perform(async () => {
         await invoke("cmd_import_whistle_rules", { path });
       });
     },
 
     switchProfile: async (profileId: string) => {
-      await quietly(async () => {
+      await perform(async () => {
         await invoke("cmd_switch_profile", { profileId });
         await get().loadConfig();
         await get().refreshPac();

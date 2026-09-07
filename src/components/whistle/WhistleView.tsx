@@ -25,14 +25,17 @@ function isPrivateIPv4(hostname: string): boolean {
 }
 
 function isAllowedHost(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
+  const lower = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return lower === "localhost" || lower === "127.0.0.1" || lower === "::1" || isPrivateIPv4(lower);
 }
 
 function buildSafeHttpUrl(host: string, port: number): string | null {
   if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
   try {
-    const url = new URL(`http://${host}:${port}`);
+    const normalized = host.replace(/^\[|\]$/g, "");
+    const url = new URL(
+      `http://${normalized.includes(":") ? `[${normalized}]` : normalized}:${port}`,
+    );
     if ((url.protocol === "http:" || url.protocol === "https:") && isAllowedHost(url.hostname)) {
       return url.toString();
     }
@@ -70,6 +73,8 @@ export default function WhistleView() {
   const refreshWhistleStatus = useAppStore((s) => s.refreshWhistleStatus);
   const theme = useAppStore((s) => s.theme);
 
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [uiError, setUiError] = useState<string | null>(null);
   const [iframeKey, setIframeKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const [disconnectAlert, setDisconnectAlert] = useState(false);
@@ -77,7 +82,6 @@ export default function WhistleView() {
   const [authProxyReady, setAuthProxyReady] = useState(false);
   const [probeFailed, setProbeFailed] = useState(false);
   const prevAliveRef = useRef<boolean | null>(null);
-  const iframeRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const whistleAlive = whistleStatus?.running && whistleStatus?.uptime_check;
   const isEmbedded = config?.whistle?.mode === "embedded";
@@ -106,21 +110,17 @@ export default function WhistleView() {
       if (!cancelled) setProbeFailed(true);
     };
     check();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [whistleAlive, authProxyUrl, iframeKey]);
 
   useEffect(() => {
-    if (!authProxyReady || !whistleAlive) return;
-    iframeRetryTimerRef.current = setTimeout(async () => {
-      const ok = await probeAuthProxy();
-      if (ok) {
-        setIframeKey((k) => k + 1);
-      }
-    }, 6000);
-    return () => {
-      if (iframeRetryTimerRef.current) clearTimeout(iframeRetryTimerRef.current);
-    };
-  }, [authProxyReady, iframeKey, whistleAlive]);
+    const interval = setInterval(() => {
+      refreshWhistleStatus().catch(() => {});
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [refreshWhistleStatus]);
 
   const handleConnectExternal = useCallback(async () => {
     setConnecting(true);
@@ -129,6 +129,7 @@ export default function WhistleView() {
       await startAuthProxy();
       await refreshWhistleStatus();
       setIframeKey((k) => k + 1);
+    } catch {
     } finally {
       setConnecting(false);
     }
@@ -137,10 +138,10 @@ export default function WhistleView() {
   const prevAuthProxyUrlRef = useRef(authProxyUrl);
 
   useEffect(() => {
-    refreshWhistleStatus().catch(() => { });
+    refreshWhistleStatus().catch(() => {});
     startAuthProxy()
       .then(() => setIframeKey((k) => k + 1))
-      .catch(() => { });
+      .catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -163,14 +164,14 @@ export default function WhistleView() {
       setAuthProxyReady(false);
       startAuthProxy()
         .then(() => setIframeKey((k) => k + 1))
-        .catch(() => { });
+        .catch(() => {});
     }
     prevAliveForRefreshRef.current = nowAlive;
   }, [whistleAlive, isEmbedded, startAuthProxy]);
 
   useEffect(() => {
     if (configLoaded && !isEmbedded) {
-      handleConnectExternal();
+      handleConnectExternal().catch(() => {});
       const interval = setInterval(() => {
         refreshWhistleStatus();
       }, 15000);
@@ -193,6 +194,7 @@ export default function WhistleView() {
       await startAuthProxy();
       await new Promise((r) => setTimeout(r, 1500));
       setIframeKey((k) => k + 1);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -200,7 +202,7 @@ export default function WhistleView() {
 
   const handleStop = async () => {
     setAuthProxyReady(false);
-    await stopWhistle();
+    await stopWhistle().catch(() => {});
   };
 
   const handleRestart = async () => {
@@ -213,6 +215,7 @@ export default function WhistleView() {
       await startAuthProxy();
       await new Promise((r) => setTimeout(r, 1500));
       setIframeKey((k) => k + 1);
+    } catch {
     } finally {
       setLoading(false);
     }
@@ -333,15 +336,54 @@ export default function WhistleView() {
     return `${authProxyUrl}${separator}_theme=${theme}`;
   })();
 
+  useEffect(() => {
+    if (!authProxyReady || !iframeSrc) return;
+    setUiError(null);
+    let ready = false;
+    const timer = setTimeout(() => {
+      if (!ready) setUiError("Whistle 界面加载超时，请检查连接或点击刷新");
+    }, 20000);
+    const message = (event: MessageEvent) => {
+      if (
+        event.origin !== new URL(iframeSrc).origin ||
+        event.source !== iframeRef.current?.contentWindow
+      )
+        return;
+      if (event.data?.type === "whistlebox-ui-ready") {
+        ready = true;
+        clearTimeout(timer);
+        setUiError(null);
+      }
+      if (!ready && event.data?.type === "whistlebox-ui-error")
+        setUiError("Whistle 界面资源加载失败，请检查连接后刷新");
+    };
+    window.addEventListener("message", message);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("message", message);
+    };
+  }, [authProxyReady, iframeSrc, iframeKey]);
+
   const renderContent = () => {
     if (whistleAlive && authProxyUrl && authProxyReady) {
       return (
-        <iframe
-          key={`${iframeKey}-${theme}`}
-          src={iframeSrc}
-          className="w-full h-full border-0"
-          title="Whistle UI"
-        />
+        <>
+          <iframe
+            ref={iframeRef}
+            key={`${iframeKey}-${theme}`}
+            src={iframeSrc}
+            className="w-full h-full border-0"
+            title="Whistle UI"
+          />
+          {uiError && (
+            <div role="alert" className="absolute inset-x-4 top-4 glass-panel p-4">
+              <p>{uiError}</p>
+              <button className="btn-secondary mt-2" onClick={handleRefresh}>
+                重新加载
+              </button>
+            </div>
+          )}
+        </>
       );
     }
 
@@ -448,12 +490,13 @@ export default function WhistleView() {
           <h1 className="text-base font-semibold text-surface-200">Whistle</h1>
           <div className="flex items-center gap-1.5">
             <span
-              className={`status-dot ${whistleAlive
+              className={`status-dot ${
+                whistleAlive
                   ? "status-dot--active"
                   : whistleStatus?.running
                     ? "status-dot--warning"
                     : "status-dot--inactive"
-                }`}
+              }`}
             />
             <span className="text-xs text-surface-500">
               {isEmbedded

@@ -1,0 +1,136 @@
+name: Windows 构建与发布
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  dependencies:
+    name: 依赖漏洞查询
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.21.1'
+      - name: 查询依赖公告
+        run: |
+          mkdir -p test-results
+          npm audit --package-lock-only --json > test-results/npm-audit.json || true
+          npm audit --prefix src-tauri/resources/whistle --package-lock-only --json > test-results/whistle-audit.json || true
+          node -e 'for(const p of ["npm-audit","whistle-audit"]){ const r=require("./test-results/"+p+".json"); if(!r.metadata) throw Error(p+": 查询未完成"); console.log(p, r.metadata.vulnerabilities); }'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit
+          path: test-results/
+  build:
+    name: 验证并构建 Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.21.1'
+          cache: npm
+      - name: 配置 Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+          rustup component add rustfmt clippy
+          Set-Content src-tauri/.cargo/config.toml '[net]'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-rust-${{ hashFiles('src-tauri/Cargo.lock') }}
+      - name: 安装锁定依赖与内置运行时
+        run: |
+          npm ci
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run prepare-sidecar
+      - name: 检查版本与前端
+        run: |
+          node scripts/check-version.mjs
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm test
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run build
+      - name: Rust 格式、测试和静态检查
+        working-directory: src-tauri
+        run: |
+          cargo fmt --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked --lib --no-default-features
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --lib --tests --no-default-features -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo build --locked --example ui_fixture
+      - name: 真实 Whistle 共存与浏览器验证
+        run: |
+          npm run test:contracts
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run test:lifecycle
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm run test:browser
+      - name: 构建中文安装包
+        run: npm run package
+      - name: WebView2 与 Windows 系统功能验证
+        env:
+          WHISTLEBOX_TEST_SYSTEM: '1'
+        run: npm run test:webview
+      - name: 安装、升级与卸载验证
+        run: ./scripts/test-installer.ps1
+      - name: 生成校验文件
+        run: |
+          Get-ChildItem release/*-setup.exe | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content release/SHA256SUMS.txt -Encoding utf8
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: release/*
+          if-no-files-found: error
+      - name: 保存诊断截图和日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: |
+            test-results/
+            .tooling/webview-fixture/*.log
+          if-no-files-found: ignore
+
+  release:
+    name: 发布发行版
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: release
+      - name: 创建 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release/* --verify-tag --title "WhistleBox $RELEASE_TAG" --notes-file CHANGELOG.md

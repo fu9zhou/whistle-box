@@ -1,5 +1,5 @@
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, renameSync, copyFileSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, renameSync, copyFileSync, readFileSync, lstatSync } from "fs";
 import { join } from "path";
 import { platform, arch } from "os";
 import https from "https";
@@ -60,6 +60,8 @@ function downloadFile(url, dest, maxRedirects = 5) {
         return;
       }
       const file = createWriteStream(dest);
+      response.on("error", reject);
+      file.on("error", reject);
       response.pipe(file);
       file.on("finish", () => {
         file.close();
@@ -113,6 +115,7 @@ async function main() {
   let needsDownload = !existsSync(nodeBinPath);
   if (!needsDownload) {
     try {
+      if (os === "win32") verifyChecksum(nodeBinPath, NODE_SHA256[`win-${archStr}/node.exe`]);
       const versionOut = execSync(`"${nodeBinPath}" -v`, {
         encoding: "utf8",
         timeout: 10000,
@@ -136,14 +139,14 @@ async function main() {
     console.log("Downloading Node.js binary...");
 
     if (os === "win32") {
-      const nodeUrl = `https://nodejs.org/dist/${NODE_VERSION}/win-${archStr}/node.exe`;
+      const nodeUrl = `${process.env.NODE_DOWNLOAD_MIRROR || "https://nodejs.org/dist"}/${NODE_VERSION}/win-${archStr}/node.exe`;
       console.log(`URL: ${nodeUrl}`);
       await downloadFile(nodeUrl, nodeBinPath);
       const checksumKey = `win-${archStr}/node.exe`;
       if (NODE_SHA256[checksumKey]) verifyChecksum(nodeBinPath, NODE_SHA256[checksumKey]);
     } else {
       const nodeArchive = `node-${NODE_VERSION}-${platInfo.os}-${archStr}.tar.gz`;
-      const nodeUrl = `https://nodejs.org/dist/${NODE_VERSION}/${nodeArchive}`;
+      const nodeUrl = `${process.env.NODE_DOWNLOAD_MIRROR || "https://nodejs.org/dist"}/${NODE_VERSION}/${nodeArchive}`;
       const archivePath = join(binDir, nodeArchive);
 
       console.log(`URL: ${nodeUrl}`);
@@ -174,7 +177,7 @@ async function main() {
 
   // Step 2: Install whistle (with lockfile for reproducible builds)
   const whistleModules = join(resDir, "node_modules", "whistle");
-  if (!existsSync(whistleModules)) {
+  {
     const lockfilePath = join(resDir, "package-lock.json");
     if (!existsSync(lockfilePath)) {
       throw new Error(
@@ -182,23 +185,18 @@ async function main() {
       );
     }
     console.log("Installing whistle (npm ci)...");
-    execSync(`npm ci --prefix "${resDir}"`, {
+    execSync(`npm ci --ignore-scripts --no-audit --no-fund --prefix "${resDir}"`, {
       stdio: "inherit",
       env: { ...process.env, NODE_ENV: "production" },
     });
     console.log("Whistle installed successfully.");
-  } else {
-    console.log("Whistle already installed.");
   }
 
   // Remove npm self-link junction to prevent infinite recursion in tauri_build resource scanning
   const selfLink = join(resDir, "node_modules", "whistlebox-whistle");
   if (existsSync(selfLink)) {
-    if (os === "win32") {
-      execSync(`rmdir "${selfLink}"`, { stdio: "inherit" });
-    } else {
-      execSync(`rm -f "${selfLink}"`, { stdio: "inherit" });
-    }
+    if (!lstatSync(selfLink).isSymbolicLink()) throw new Error("Unexpected self-link directory");
+    unlinkSync(selfLink);
     console.log("Removed npm self-link junction: whistlebox-whistle");
   }
 

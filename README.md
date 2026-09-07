@@ -1,166 +1,144 @@
 # WhistleBox
 
-> 基于 [Whistle](https://github.com/nicosql/whistle) 的桌面代理调试工具，为 Whistle 提供开箱即用的原生桌面体验。
+面向 Windows 的 Whistle 桌面客户端。内置 Node.js 与 Whistle，也可以连接已有实例，在一个窗口中管理网络调试、代理规则和证书。
 
-WhistleBox 将强大的 Whistle Web 调试代理封装为一个现代化的桌面应用，内置 Node.js 运行环境和 Whistle 实例，无需手动安装配置，一键启动即可使用。
+![WhistleBox 项目介绍：内置与外部实例、规则与配置管理、系统代理切换、证书管理](docs/assets/whistlebox-overview.png)
 
-## 特性
+[下载安装](https://github.com/fu9zhou/whistle-box/releases/latest) · [更新记录](CHANGELOG.md) · [问题反馈](https://github.com/fu9zhou/whistle-box/issues) · [构建状态](https://github.com/fu9zhou/whistle-box/actions/workflows/windows.yml)
 
-- **开箱即用** — 内置 Node.js + Whistle，安装后立即可用，无需任何前置依赖
-- **系统代理集成** — 支持全局代理、规则代理（PAC）、直连三种模式，一键切换
-- **内置 Whistle 界面** — Whistle UI 直接嵌入应用窗口，无需打开浏览器
-- **HTTPS 抓包** — 自动管理根证书的安装和卸载，简化 HTTPS 调试流程
-- **配置管理** — 支持多配置 Profile 导入导出，方便在不同场景间切换
-- **规则编辑** — 内置规则编辑器，支持 Whistle 规则语法
-- **外部模式** — 也可以连接已有的外部 Whistle 实例进行管理
-- **开机自启** — 支持 Windows 开机自动启动
-- **系统托盘** — 最小化到系统托盘，不占用任务栏空间
-- **亮色/暗色主题** — 跟随系统或手动切换，UI 全面适配
+> 上图为项目介绍示意图。目前发布 Windows x64 安装包；macOS、Linux 暂无经过验收的发行版。
 
-## 安装
+## 功能
 
-### Windows 用户
+| 功能 | 说明 |
+| --- | --- |
+| 内置实例 | 自带独立 Node.js 和 Whistle，管理启动、停止与故障恢复 |
+| 外部实例 | 连接已有 Whistle，支持用户名和密码；不会停止外部进程 |
+| 内嵌调试界面 | 在桌面窗口中使用 Whistle 请求查看和规则调试功能 |
+| 系统代理 | 支持全局代理、域名规则代理（PAC）与释放代理接管 |
+| 配置管理 | 多套域名规则配置，支持切换、导入和导出 |
+| 证书管理 | 按当前实例的证书指纹检查、安装与移除证书 |
+| 桌面集成 | 系统托盘、开机启动、亮色与暗色主题 |
 
-直接下载安装包：
+应用内的“规则”页面编辑 **PAC 域名匹配规则**。请求改写、替换、转发等完整 Whistle 规则在“Whistle”页面编辑。
 
-1. 前往 [GitHub Releases](https://github.com/fu9zhou/whistle-box/releases) 页面
-2. 下载最新版本的 `WhistleBox_x.x.x_x64-setup.exe`
-3. 运行安装包，按提示完成安装
-4. 启动 WhistleBox，按引导完成初始设置
+## 安装与开始使用
 
-### macOS 用户
+1. 在[发行页面](https://github.com/fu9zhou/whistle-box/releases/latest)下载 `WhistleBox_版本号_x64-setup.exe`。
+2. 运行安装包，按中文引导安装。需要 Windows 10/11 x64 和 WebView2 运行时；安装器按需下载 WebView2。
+3. 首次启动选择内置模式，或填写已有 Whistle 的地址、端口及认证信息。
+4. 确认 Whistle 正常运行后，选择所需代理模式。HTTPS 调试需要信任当前实例的根证书。
 
-目前暂无 macOS 构建版本。如果你是 Mac 用户并且有兴趣，非常欢迎参与贡献 macOS 版本的构建和测试（详见下方"贡献"章节）。
+普通用户无需安装 Node.js、Rust 或全局 Whistle。发行包暂未进行 Windows 代码签名，可将文件的 SHA-256 与发行页的 `SHA256SUMS.txt` 对照。
 
-## 使用说明
+### 已安装 Whistle 时如何使用
 
-### 内置模式（推荐）
+- **继续使用已有实例**：选择外部模式，填写真实地址、端口与认证信息。默认外部端口为 `8899`。
+- **同时使用独立实例**：选择内置模式，默认代理端口为 `18899`，界面认证代理为 `18900`，PAC 服务为 `18901`。这些端口必须可用且互不冲突。
+- 端口被占用时，修改端口或选择外部模式。应用报告冲突，不会按端口强制终止其他程序。
 
-1. 首次启动会进入设置引导，选择"内置模式"
-2. WhistleBox 会自动启动内嵌的 Whistle 实例
-3. 在 Whistle 页面中可以查看和修改抓包规则
-4. 通过左侧栏的"代理控制"切换系统代理模式
-
-### 外部模式
-
-如果你已经在运行一个 Whistle 实例：
-
-1. 在设置引导中选择"外部模式"
-2. 填写已有 Whistle 实例的地址和端口
-3. 如果 Whistle 设置了用户名密码，一并填写
-4. WhistleBox 会通过 Auth Proxy 安全连接到你的 Whistle 实例
+内置实例使用独立数据目录，忽略用户级 Whistle 启动配置及相关环境变量，不复用全局实例的规则与证书。默认数据位于用户目录下的 `.WhistleBoxData`，可在设置中指定存储路径。
 
 ### 代理模式
 
-| 模式 | 说明 |
-|------|------|
-| 直连 | 不设置系统代理，手动配置浏览器代理 |
-| 全局代理 | 所有系统流量经过 Whistle |
-| 规则代理（PAC） | 仅匹配规则的域名经过 Whistle，其余直连 |
+| 模式 | 行为 |
+| --- | --- |
+| 全局代理 | 遵循 Windows 系统代理设置的应用，其 HTTP/HTTPS 请求经过当前 Whistle |
+| 规则代理 | 通过 PAC 判断域名，匹配的请求走代理，其他请求直连 |
+| 直连 | 释放 WhistleBox 的代理接管，尝试恢复接管前的设置 |
 
-## 技术栈
+系统代理不能覆盖所有应用和协议。若其他软件在接管期间修改了系统代理，WhistleBox 会保留那些修改；“直连”不会强制清除原有企业 PAC 或其他代理配置。
 
-- **桌面框架**: [Tauri v2](https://v2.tauri.app/) (Rust + WebView2)
-- **前端**: React 18 + TypeScript + Tailwind CSS + Zustand
-- **后端**: Rust (Tokio async runtime)
-- **代理核心**: [Whistle](https://github.com/nicosql/whistle) (Node.js)
-- **打包**: NSIS (Windows Installer)
+### 证书与数据
 
-## 开发
+证书安装到当前 Windows 用户的受信任根证书存储。应用仅移除有自身安装记录且指纹匹配的证书，保留用户原有证书。不同实例的证书不通用，切换实例后应重新检查。
 
-### 环境要求
+应用设置、诊断日志及代理恢复记录位于 `%APPDATA%\WhistleBox`。卸载默认保留设置、Whistle 数据与证书归属记录；需要移除本应用安装的证书时，请先在应用中操作。导出的设置可能包含认证信息，分享前请脱敏。
 
-- [Node.js](https://nodejs.org/) >= 18
-- [Rust](https://rustup.rs/) >= 1.75
-- [Tauri 2 CLI](https://v2.tauri.app/start/prerequisites/)
-- Windows 10/11 + WebView2 Runtime
+## 常见问题
 
-### 快速开始
+**Whistle 页面空白或连接失败**
 
-```bash
-# 克隆仓库
+先确认实例运行正常，再检查端口是否占用、外部用户名和密码是否正确，随后点击页面中的重试按钮。查看 `%APPDATA%\WhistleBox\whistlebox.log` 获取失败原因。日志按大小轮转，保留一个历史文件。
+
+**关闭后仍有系统代理**
+
+使用网络修复功能，或从托盘正常退出。应用只恢复属于自己的代理设置。其他程序设置的代理需要在对应程序或 Windows 设置中处理。
+
+**配置损坏或需要重置**
+
+损坏配置会保留原文件及 `config.invalid.*.json` 备份。也可以在源码目录中执行以下命令，正常退出指定应用并备份设置；Whistle 规则和证书会保留：
+
+```powershell
+npm run reset-config -- -Executable "C:\实际安装目录\whistle-box.exe"
+```
+
+反馈时请提供应用版本、Windows 版本、内置/外部模式、复现步骤与脱敏日志，请勿上传密码、认证链接或抓包中的隐私数据。
+
+## 开发与构建
+
+需要 Node.js 22 或 24、Rust 稳定版、Visual Studio C++ 构建工具、Windows SDK 与 WebView2。Tauri CLI 已列入开发依赖。环境要求参见 [Tauri 官方文档](https://v2.tauri.app/zh-cn/start/prerequisites/)。
+
+```powershell
 git clone https://github.com/fu9zhou/whistle-box.git
 cd whistle-box
-
-# 安装依赖并准备 sidecar
 npm run setup
-
-# 启动开发模式
 npm run start
 ```
 
-### 常用命令
+内置运行时固定为 Node.js `22.21.1`，下载后校验 SHA-256；Whistle 固定为 `2.10.2`，通过独立锁文件安装。源码依赖同样使用锁文件。
 
-| 命令 | 说明 |
-|------|------|
-| `npm run setup` | 安装依赖 + 准备 sidecar (Node.js + Whistle) |
-| `npm run start` | 准备 sidecar + 启动 Tauri 开发模式 |
-| `npm run dev` | 仅启动 Vite 前端开发服务器 |
-| `npm run package` | 完整打包流程（sidecar → build → NSIS） |
-| `npm run format` | 格式化代码 |
-| `npm run reset-config` | 重置配置并清理进程 |
+网络较慢时，可在当前 PowerShell 会话设置镜像，不影响全局配置：
 
-### 项目结构
-
-```
-whistle-box/
-├── src/                    # 前端 React 源码
-│   ├── components/         # UI 组件
-│   ├── stores/             # Zustand 状态管理
-│   ├── styles/             # 全局样式
-│   └── types.ts            # TypeScript 类型定义
-├── src-tauri/              # Tauri/Rust 后端
-│   ├── src/
-│   │   ├── auth/           # Auth Proxy（认证代理）
-│   │   ├── config/         # 配置管理
-│   │   ├── proxy/          # 系统代理控制 + PAC 服务
-│   │   ├── whistle/        # Whistle 进程管理
-│   │   ├── tray.rs         # 系统托盘
-│   │   ├── autostart.rs    # 开机自启
-│   │   ├── utils.rs        # 工具函数
-│   │   └── lib.rs          # Tauri 命令注册
-│   ├── resources/whistle/  # 内嵌 Whistle 配置
-│   ├── nsis-hooks.nsi      # NSIS 安装/卸载钩子
-│   └── nsis-lang/          # NSIS 多语言文件
-├── scripts/                # 构建脚本
-└── site/                   # 项目官网
+```powershell
+$env:npm_config_registry = 'https://registry.npmmirror.com'
+$env:NODE_DOWNLOAD_MIRROR = 'https://cdn.npmmirror.com/binaries/node'
+npm run setup
 ```
 
-## 贡献
+`src-tauri/.cargo/config.toml` 提供 Rust 依赖镜像配置，GitHub 构建使用官方源。`scripts/dev-env.ps1` 适用于工具链已安装在 `.tooling` 下的本地环境；使用系统 Rust 的开发者无需执行它。
 
-WhistleBox 欢迎任何形式的贡献！
+### 验证命令
 
-### 特别欢迎
+```powershell
+npm test
+npm run build
+Push-Location src-tauri
+cargo fmt --check
+cargo test --locked --lib --no-default-features
+cargo clippy --locked --lib --tests --no-default-features -- -D warnings
+cargo build --locked --example ui_fixture
+Pop-Location
+npm run test:contracts
+npm run test:lifecycle
+npm run test:browser
+npm run package
+npm run test:webview
+```
 
-- **macOS 版本的构建和测试** — 项目基于 Tauri，理论上支持 macOS，但目前没有 Mac 环境进行测试。如果你是 Mac 用户，非常欢迎：
-  - Fork 仓库并在 macOS 上尝试构建
-  - 修复 macOS 平台特有的兼容性问题
-  - 提交 PR 贡献 macOS 安装包构建流程
+浏览器测试使用已安装的 Edge；真实实例测试使用 `.tooling` 下的隔离目录，截图位于 `test-results`。WebView2 测试默认不修改系统代理或信任证书；GitHub 临时 Windows 环境额外验证系统设置和安装卸载。第三方插件及非 Windows 平台不在当前验收范围。历史问题与修复记录见[验收报告](audit/FIX-VALIDATION-2026-09-07.md)。
 
-- **Bug 反馈和功能建议** — 在 [Issues](https://github.com/fu9zhou/whistle-box/issues) 中提交
+### 自动构建与发布
 
-### 贡献流程
+推送 `main`、提交合并请求或手动运行工作流会触发 Windows 构建与回归验证，通过后生成安装包和 SHA-256 校验文件，可在工作流产物中下载。
 
-1. Fork 本仓库
-2. 创建你的分支 (`git checkout -b feature/amazing-feature`)
-3. 提交更改 (`git commit -m 'Add amazing feature'`)
-4. 推送到分支 (`git push origin feature/amazing-feature`)
-5. 创建 Pull Request
+版本以 `package.json` 为准，构建时同步至 Tauri 和 Cargo。发布时更新版本与更新记录，验证后提交代码，再创建对应的 `v版本号` 标签。标签构建全部通过后自动创建 GitHub Release；失败不会发布。发布使用 GitHub 自动提供的令牌，无需另配个人令牌。
 
-> **提示**: 本项目代码完全使用 AI 编写（Claude Opus 4.6），你也可以使用 AI 辅助工具来参与开发和调试。
+### 目录结构
 
-## 关于
+```text
+src/                         前端组件、状态和页面
+src-tauri/src/               进程、认证代理、系统代理、配置和证书管理
+src-tauri/resources/         内置 Whistle 启动器及维护脚本
+scripts/                    开发、版本同步和安装包脚本
+audit/                      回归测试与历史验收报告
+docs/assets/                项目介绍图片
+.github/workflows/          Windows 验证、构建与发布
+site/                       项目网站
+```
 
-### AI 驱动的开发
+## 参与贡献
 
-WhistleBox 是一个 **100% 由 AI 编写的项目**。从架构设计、Rust 后端、React 前端到 NSIS 安装脚本，所有代码均由 [Claude Opus 4.6](https://www.anthropic.com/claude) 生成。这是一个探索 AI 编程能力边界的实验性项目，同时也是一个实用的开发工具。
+欢迎提交可复现的问题和改进建议。修改前运行相关测试，为修复的行为补充回归用例；提交合并请求时说明问题、修改效果与验证方式。请使用中文编写用户文案、文档和问题描述，代码标识符沿用现有约定。
 
-### 致谢
-
-- [Whistle](https://github.com/nicosql/whistle) — 强大的跨平台 Web 调试代理工具，WhistleBox 的核心引擎
-- [Tauri](https://v2.tauri.app/) — 构建轻量级桌面应用的现代框架
-- [Anthropic Claude](https://www.anthropic.com/claude) — 驱动本项目开发的 AI 模型
-
-## 许可证
-
-MIT License
+项目基于 [Whistle](https://github.com/avwo/whistle)、[Tauri](https://github.com/tauri-apps/tauri)、React 与 Rust 构建，采用 MIT 许可证。第三方组件遵循各自许可证。

@@ -1,7 +1,7 @@
 {
   "name": "whistle-box",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,12 +9,17 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "prepare-sidecar": "node scripts/prepare-sidecar.mjs",
-    "setup": "npm install && npm run prepare-sidecar",
+    "setup": "npm ci && npm run prepare-sidecar",
     "start": "npm run prepare-sidecar && tauri dev",
     "package": "npm run prepare-sidecar && tauri build --bundles nsis && node scripts/patch-nsis-lang.mjs",
     "reset-config": "powershell -ExecutionPolicy Bypass -File scripts/reset-config.ps1",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.{js,mjs}\" \"*.{json,ts,js,mjs}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.{js,mjs}\" \"*.{json,ts,js,mjs}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"scripts/**/*.{js,mjs}\" \"*.{json,ts,js,mjs}\"",
+    "test": "node --test --test-timeout=20000 audit/frontend.test.mjs",
+    "test:contracts": "node audit/whistle-contract.mjs",
+    "test:browser": "node audit/browser-smoke.mjs",
+    "test:lifecycle": "node audit/lifecycle-smoke.mjs",
+    "test:webview": "node audit/webview-smoke.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -31,10 +36,14 @@
     "@types/node": "^25.5.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@types/react-test-renderer": "18.3.1",
     "@vitejs/plugin-react": "^4.3.0",
     "autoprefixer": "^10.4.20",
+    "esbuild": "0.25.12",
+    "playwright-core": "1.58.2",
     "postcss": "^8.4.49",
     "prettier": "^3.8.1",
+    "react-test-renderer": "18.3.1",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.6.0",
     "vite": "^6.0.0"

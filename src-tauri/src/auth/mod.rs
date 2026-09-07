@@ -1,18 +1,24 @@
-use crate::AppState;
+use crate::{utils, AppState};
 use base64::Engine;
-use hyper::body::Bytes;
+use futures_util::StreamExt;
+use http_body_util::{combinators::UnsyncBoxBody, BodyExt, Full, StreamBody};
+use hyper::body::{Bytes, Frame};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use http_body_util::{BodyExt, Full};
-use std::convert::Infallible;
-use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
-use tokio::net::TcpListener;
-use tokio::sync::{RwLock, Semaphore};
-
+use std::{
+    convert::Infallible,
+    sync::{Arc, OnceLock},
+    time::Duration,
+};
+use tokio::{
+    net::TcpListener,
+    sync::{Mutex, RwLock, Semaphore},
+    task::JoinHandle,
+};
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+type ProxyBody = UnsyncBoxBody<Bytes, BoxError>;
 #[derive(Clone)]
 struct AuthProxyConfig {
     target_host: String,
@@ -23,279 +29,311 @@ struct AuthProxyConfig {
     listen_port: u16,
     http_client: reqwest::Client,
 }
-
-static SHARED_CONFIG: OnceLock<Arc<RwLock<AuthProxyConfig>>> = OnceLock::new();
-static AUTH_PROXY_CONN_LIMITER: OnceLock<Arc<Semaphore>> = OnceLock::new();
-const AUTH_PROXY_MAX_CONNECTIONS: usize = 128;
-
-fn auth_conn_limiter() -> Arc<Semaphore> {
-    AUTH_PROXY_CONN_LIMITER
-        .get_or_init(|| Arc::new(Semaphore::new(AUTH_PROXY_MAX_CONNECTIONS)))
-        .clone()
+struct Listener {
+    port: u16,
+    config: Arc<RwLock<AuthProxyConfig>>,
+    task: JoinHandle<()>,
 }
-
-fn check_host_port(url: &str, port: u16) -> bool {
-    let url_lower = url.to_lowercase();
-    let stripped = url_lower
-        .strip_prefix("http://")
-        .or_else(|| url_lower.strip_prefix("https://"))
-        .unwrap_or(&url_lower);
-    let host_port = stripped.split('/').next().unwrap_or("");
-    let expected_a = format!("127.0.0.1:{}", port);
-    let expected_b = format!("localhost:{}", port);
-    host_port == expected_a || host_port == expected_b
+static LISTENER: Mutex<Option<Listener>> = Mutex::const_new(None);
+static AUTH_TOKEN: OnceLock<String> = OnceLock::new();
+pub fn get_auth_token() -> &'static str {
+    AUTH_TOKEN.get_or_init(|| {
+        let mut bytes = [0; 32];
+        getrandom::getrandom(&mut bytes).expect("Secure randomness unavailable");
+        bytes.iter().map(|v| format!("{v:02x}")).collect()
+    })
 }
-
-fn is_private_or_loopback_host(host: &str) -> bool {
-    crate::utils::is_private_or_loopback(host)
+fn full(body: impl Into<Bytes>) -> ProxyBody {
+    Full::new(body.into())
+        .map_err(|never| match never {})
+        .boxed_unsync()
 }
-
-fn has_valid_token(req: &Request<hyper::body::Incoming>, config: &AuthProxyConfig) -> bool {
-    if let Some(query) = req.uri().query() {
-        let expected = format!("_token={}", config.secret_token);
-        for param in query.split('&') {
-            if param == expected {
-                return true;
-            }
-        }
-    }
-    false
+fn error(status: u16, message: &str) -> Response<ProxyBody> {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "text/plain; charset=utf-8")
+        .header("Cache-Control", "no-store")
+        .body(full(message.to_string()))
+        .unwrap()
 }
-
-fn is_authorized_request(req: &Request<hyper::body::Incoming>, config: &AuthProxyConfig) -> bool {
+fn check_host_port(raw: &str, port: u16) -> bool {
+    reqwest::Url::parse(raw).is_ok_and(|url| {
+        url.scheme() == "http"
+            && url.port_or_known_default() == Some(port)
+            && matches!(url.host_str(), Some("127.0.0.1" | "localhost"))
+    })
+}
+fn query_token(query: Option<&str>, token: &str) -> bool {
+    query.is_some_and(|q| {
+        q.split('&')
+            .any(|p| p.strip_prefix("_token=") == Some(token))
+    })
+}
+fn has_valid_token<B>(req: &Request<B>, config: &AuthProxyConfig) -> bool {
+    query_token(req.uri().query(), &config.secret_token)
+}
+fn cookie_name(port: u16) -> String {
+    format!("whistlebox_session_{port}")
+}
+fn is_authorized_request<B>(req: &Request<B>, config: &AuthProxyConfig) -> bool {
     if has_valid_token(req, config) {
         return true;
     }
-
-    let origin = req.headers().get("origin").and_then(|v| v.to_str().ok()).unwrap_or("");
-    let referer = req.headers().get("referer").and_then(|v| v.to_str().ok()).unwrap_or("");
-
-    let from_tauri = origin.starts_with("tauri://") || referer.starts_with("tauri://");
-    let from_self = check_host_port(origin, config.listen_port)
-        || check_host_port(referer, config.listen_port);
-
-    #[cfg(debug_assertions)]
-    let from_dev = origin.starts_with("http://localhost:1420")
-        || referer.starts_with("http://localhost:1420");
-    #[cfg(not(debug_assertions))]
-    let from_dev = false;
-
-    if from_tauri || from_self || from_dev {
-        let has_token_in_referer = referer.contains("_token=");
-        if has_token_in_referer || from_tauri {
-            return true;
-        }
+    let origin = req
+        .headers()
+        .get("origin")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !origin.is_empty() && !check_host_port(origin, config.listen_port) {
+        return false;
     }
-
-    false
-}
-
-fn extract_theme_param(uri: &hyper::Uri) -> Option<String> {
-    uri.query().and_then(|q| {
-        q.split('&').find_map(|pair| {
-            let mut kv = pair.splitn(2, '=');
-            match (kv.next(), kv.next()) {
-                (Some("_theme"), Some(v)) if v == "dark" || v == "light" => Some(v.to_string()),
-                _ => None,
-            }
-        })
-    })
-}
-
-fn inject_theme_into_html(body: &[u8], theme: &str) -> Option<Vec<u8>> {
-    let text = std::str::from_utf8(body).ok()?;
-    if !text.contains("<head") && !text.contains("<HEAD") {
-        return None;
+    let referer = req
+        .headers()
+        .get("referer")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if check_host_port(referer, config.listen_port)
+        && reqwest::Url::parse(referer).is_ok_and(|u| query_token(u.query(), &config.secret_token))
+    {
+        return true;
     }
-    let theme_script = format!(
-        r#"<script>(function(){{var t="{}";document.documentElement.setAttribute("data-theme",t);new MutationObserver(function(){{document.documentElement.getAttribute("data-theme")!==t&&document.documentElement.setAttribute("data-theme",t)}}).observe(document.documentElement,{{attributes:true,attributeFilter:["data-theme"]}})}})();</script>"#,
-        theme
+    let expected = format!(
+        "{}={}",
+        cookie_name(config.listen_port),
+        config.secret_token
     );
-    let injected = if let Some(pos) = text.find("</head>") {
-        format!("{}{}{}", &text[..pos], theme_script, &text[pos..])
-    } else if let Some(pos) = text.find("</HEAD>") {
-        format!("{}{}{}", &text[..pos], theme_script, &text[pos..])
-    } else {
-        return None;
-    };
-    Some(injected.into_bytes())
+    req.headers()
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(';').any(|v| v.trim() == expected))
 }
-
+fn hop_header(key: &str) -> bool {
+    matches!(
+        key,
+        "host"
+            | "connection"
+            | "keep-alive"
+            | "proxy-connection"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+            | "content-length"
+    )
+}
+fn clean_path(uri: &hyper::Uri) -> String {
+    let mut path = uri.path().to_string();
+    let query = uri
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .filter(|p| !p.is_empty() && !p.starts_with("_token=") && !p.starts_with("_theme="))
+        .collect::<Vec<_>>()
+        .join("&");
+    if !query.is_empty() {
+        path.push('?');
+        path.push_str(&query);
+    }
+    path
+}
+fn html_injection(theme: &str) -> String {
+    let theme = if theme == "light" { "light" } else { "dark" };
+    format!(
+        r#"<script>(function(){{var t="{theme}";document.documentElement.setAttribute('data-theme',t);new MutationObserver(function(){{if(document.documentElement.getAttribute('data-theme')!==t)document.documentElement.setAttribute('data-theme',t)}}).observe(document.documentElement,{{attributes:true,attributeFilter:['data-theme']}});var done=false;function ready(){{var el=document.getElementById('container');if(!done&&el&&el.children.length){{done=true;parent.postMessage({{type:'whistlebox-ui-ready'}},'*');}}}}new MutationObserver(ready).observe(document,{{childList:true,subtree:true}});window.addEventListener('load',ready);window.addEventListener('error',function(){{parent.postMessage({{type:'whistlebox-ui-error'}},'*')}},true);}})();</script>"#
+    )
+}
 async fn proxy_request(
     req: Request<hyper::body::Incoming>,
     config: Arc<RwLock<AuthProxyConfig>>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
-    if req.uri().path() == "/__health" {
-        return Ok(Response::builder()
-            .status(200)
-            .header("Access-Control-Allow-Origin", "*")
-            .header("Cache-Control", "no-store")
-            .body(Full::new(Bytes::from("ok")))
-            .unwrap());
-    }
-
-    let cfg = config.read().await;
-
+) -> Result<Response<ProxyBody>, Infallible> {
+    let cfg = config.read().await.clone();
     if !cfg.local_auth_bypass && !is_authorized_request(&req, &cfg) {
-        return Ok(Response::builder()
-            .status(403)
-            .body(Full::new(Bytes::from("Forbidden: This proxy is only accessible from WhistleBox app.")))
-            .unwrap());
+        return Ok(error(403, "请通过 WhistleBox 打开此界面"));
     }
-
-    let theme_param = extract_theme_param(req.uri());
-
-    let target_url = format!(
-        "http://{}:{}{}",
-        cfg.target_host,
-        cfg.target_port,
-        req.uri().path_and_query().map(|pq| pq.as_str()).unwrap_or("/")
-    );
-
-    let auth_header = cfg.auth_header.clone();
-    let client = cfg.http_client.clone();
-    drop(cfg);
-
-    let method = match req.method().as_str() {
-        "GET" => reqwest::Method::GET,
-        "POST" => reqwest::Method::POST,
-        "PUT" => reqwest::Method::PUT,
-        "DELETE" => reqwest::Method::DELETE,
-        "PATCH" => reqwest::Method::PATCH,
-        "HEAD" => reqwest::Method::HEAD,
-        "OPTIONS" => reqwest::Method::OPTIONS,
-        _ => reqwest::Method::GET,
-    };
-
-    let mut builder = client.request(method, &target_url);
-
+    if cfg.local_auth_bypass {
+        if let Some(origin) = req.headers().get("origin").and_then(|v| v.to_str().ok()) {
+            if !check_host_port(origin, cfg.listen_port) {
+                return Ok(error(403, "不允许跨站请求"));
+            }
+        }
+    }
+    if req.uri().path() == "/__health" {
+        let mut info = cfg.http_client.get(utils::http_url(
+            &cfg.target_host,
+            cfg.target_port,
+            "/cgi-bin/server-info",
+        ));
+        if let Some(auth) = &cfg.auth_header {
+            info = info.header("Authorization", auth);
+        }
+        let healthy = match info.send().await {
+            Ok(r) if r.status().is_success() => r
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .is_some_and(|v| crate::whistle::valid_server_info(&v)),
+            _ => false,
+        };
+        if !healthy {
+            return Ok(error(503, "Whistle 实例未就绪"));
+        }
+        let mut page = cfg
+            .http_client
+            .get(utils::http_url(&cfg.target_host, cfg.target_port, "/"));
+        if let Some(auth) = &cfg.auth_header {
+            page = page.header("Authorization", auth);
+        }
+        return Ok(match page.send().await {
+            Ok(r) if r.status().is_success() => error(200, "ok"),
+            _ => error(503, "Whistle 页面不可用或认证失败"),
+        });
+    }
+    if req
+        .headers()
+        .get("upgrade")
+        .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"websocket"))
+    {
+        return Ok(proxy_websocket(req, &cfg).await);
+    }
+    if req.headers().contains_key("upgrade") {
+        return Ok(error(400, "Unsupported upgrade protocol"));
+    }
+    let bootstrap = has_valid_token(&req, &cfg);
+    let theme = req
+        .uri()
+        .query()
+        .unwrap_or("")
+        .split('&')
+        .find_map(|p| p.strip_prefix("_theme="))
+        .unwrap_or("dark")
+        .to_string();
+    let path = clean_path(req.uri());
+    let target = utils::http_url(&cfg.target_host, cfg.target_port, &path);
+    let mut builder = cfg.http_client.request(req.method().clone(), &target);
+    let extra_hops = req
+        .headers()
+        .get("connection")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(',')
+        .map(|s| s.trim().to_lowercase())
+        .collect::<Vec<_>>();
     for (key, value) in req.headers() {
         let k = key.as_str();
-        if k != "host" && k != "authorization" && k != "accept-encoding" {
-            if let Ok(v) = value.to_str() {
-                builder = builder.header(k, v);
-            }
+        if hop_header(k)
+            || extra_hops.iter().any(|h| h == k)
+            || matches!(
+                k,
+                "authorization" | "accept-encoding" | "referer" | "origin" | "cookie"
+            )
+        {
+            continue;
+        }
+        builder = builder.header(key, value);
+    }
+    if let Some(cookie) = req.headers().get("cookie").and_then(|v| v.to_str().ok()) {
+        let cookie = cookie
+            .split(';')
+            .filter(|v| !v.trim().starts_with("whistlebox_session_"))
+            .collect::<Vec<_>>()
+            .join(";");
+        if !cookie.is_empty() {
+            builder = builder.header("cookie", cookie);
         }
     }
-
-    if let Some(ref auth) = auth_header {
+    builder = builder.header("Accept-Encoding", "identity");
+    if let Some(auth) = &cfg.auth_header {
         builder = builder.header("Authorization", auth);
-        log::debug!("Auth proxy: injecting auth header (len={})", auth.len());
-    } else {
-        log::debug!("Auth proxy: no auth header to inject");
     }
-
-    let body_bytes = req.collect().await.map(|b| b.to_bytes()).unwrap_or_default();
-    if !body_bytes.is_empty() {
-        builder = builder.body(body_bytes.to_vec());
+    let body =
+        match tokio::time::timeout(Duration::from_secs(30), read_upload(req.into_body())).await {
+            Ok(Ok(body)) => body,
+            Ok(Err(status)) => return Ok(error(status, "请求超过大小限制或上传中断")),
+            Err(_) => return Ok(error(408, "上传超时")),
+        };
+    let mut upstream = match builder.body(body).send().await {
+        Ok(r) => r,
+        Err(_) => return Ok(error(502, "无法连接 Whistle，请检查地址、端口及运行状态")),
+    };
+    if upstream.status() == 401 {
+        return Ok(error(502, "Whistle 认证失败，请检查用户名和密码"));
     }
-
-    match builder.send().await {
-        Ok(resp) => {
-            let status = resp.status().as_u16();
-
-            if status == 401 {
-                log::warn!("Auth proxy: Whistle returned 401 - credentials mismatch, may need restart");
-                return Ok(Response::builder()
-                    .status(502)
-                    .header("Content-Type", "text/html; charset=utf-8")
-                    .body(Full::new(Bytes::from(
-                        "<html><body style='font-family:sans-serif;text-align:center;padding:40px'>\
-                         <h3>认证失败</h3>\
-                         <p>Whistle 拒绝了当前凭据，请在设置中重启 Whistle 后刷新页面。</p>\
-                         </body></html>"
-                    )))
-                    .unwrap());
-            }
-
-            let mut response_builder = Response::builder().status(status);
-
-            for (key, value) in resp.headers() {
-                let k = key.as_str();
-                if matches!(
-                    k,
-                    "transfer-encoding"
-                        | "content-length"
-                        | "www-authenticate"
-                        | "x-frame-options"
-                        | "content-security-policy"
-                        | "content-security-policy-report-only"
-                ) {
-                    continue;
-                }
-                response_builder = response_builder.header(k, value);
-            }
-
-            response_builder = response_builder
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD")
-                .header("Access-Control-Allow-Headers", "*");
-
-            let body = resp.bytes().await.unwrap_or_default();
-            let final_body = if let Some(ref theme) = theme_param {
-                let content_type = response_builder
-                    .headers_ref()
-                    .and_then(|h| h.get("content-type"))
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or("")
-                    .to_string();
-                if content_type.contains("text/html") {
-                    inject_theme_into_html(&body, theme)
-                        .map(Bytes::from)
-                        .unwrap_or(body)
-                } else {
-                    body
-                }
-            } else {
-                body
-            };
-            Ok(response_builder
-                .body(Full::new(Bytes::from(final_body.to_vec())))
-                .unwrap())
+    let html = upstream
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("text/html"));
+    let mut response = Response::builder().status(upstream.status());
+    for (key, value) in upstream.headers() {
+        let k = key.as_str();
+        if hop_header(k)
+            || matches!(
+                k,
+                "www-authenticate"
+                    | "x-frame-options"
+                    | "content-security-policy"
+                    | "content-security-policy-report-only"
+                    | "access-control-allow-origin"
+            )
+        {
+            continue;
         }
-        Err(e) => {
-            log::error!("Auth proxy upstream error: {}", e);
-            Ok(Response::builder()
-                .status(502)
-                .header("Content-Type", "text/html; charset=utf-8")
-                .body(Full::new(Bytes::from(
-                    "<html><body style='font-family:sans-serif;text-align:center;padding:40px'>\
-                     <h3>代理连接失败</h3>\
-                     <p>无法连接到 Whistle，请确认 Whistle 已启动并检查网络设置。</p>\
-                     </body></html>"
-                )))
-                .unwrap())
+        if html && matches!(k, "etag" | "last-modified" | "cache-control") {
+            continue;
         }
+        response = response.header(key, value);
     }
-}
-
-static AUTH_PROXY_STARTING: AtomicBool = AtomicBool::new(false);
-static AUTH_PROXY_LISTENING: AtomicBool = AtomicBool::new(false);
-static AUTH_TOKEN: OnceLock<String> = OnceLock::new();
-
-fn generate_token() -> String {
-    let mut buf = [0u8; 32];
-    if let Err(e) = getrandom::getrandom(&mut buf) {
-        log::error!("getrandom failed: {}", e);
-        panic!("Cannot generate secure auth token: getrandom unavailable ({}). WhistleBox requires a working CSPRNG.", e);
+    if bootstrap {
+        response = response.header(
+            "Set-Cookie",
+            format!(
+                "{}={}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned",
+                cookie_name(cfg.listen_port),
+                cfg.secret_token
+            ),
+        );
     }
-    buf.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-pub fn get_auth_token() -> &'static str {
-    AUTH_TOKEN.get_or_init(generate_token)
-}
-
-fn build_auth_header(username: &str, password: &str) -> Option<String> {
-    if !username.is_empty() {
-        let credentials = format!("{}:{}", username, password);
-        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials);
-        Some(format!("Basic {}", encoded))
+    let body = if html {
+        let mut bytes = Vec::new();
+        loop {
+            match upstream.chunk().await {
+                Ok(Some(chunk)) => {
+                    if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
+                        return Ok(error(502, "上游 HTML 超过 4 MiB 限制"));
+                    }
+                    bytes.extend_from_slice(&chunk);
+                }
+                Ok(None) => break,
+                Err(_) => return Ok(error(502, "读取 Whistle 页面失败")),
+            }
+        }
+        let mut text = String::from_utf8_lossy(&bytes).into_owned();
+        if text.contains("</head>") {
+            text = text.replacen("</head>", &format!("{}</head>", html_injection(&theme)), 1);
+        }
+        response = response
+            .header("Cache-Control", "no-store")
+            .header("Referrer-Policy", "same-origin");
+        full(text)
     } else {
-        None
-    }
+        StreamBody::new(
+            upstream
+                .bytes_stream()
+                .map(|item| item.map(Frame::data).map_err(|e| Box::new(e) as BoxError)),
+        )
+        .boxed_unsync()
+    };
+    Ok(response.body(body).unwrap())
 }
 
+pub async fn stop_auth_proxy() {
+    if let Some(listener) = LISTENER.lock().await.take() {
+        listener.task.abort();
+        let _ = listener.task.await;
+    }
+}
 pub async fn start_auth_proxy_internal(
     port: u16,
     target_host: String,
@@ -304,204 +342,463 @@ pub async fn start_auth_proxy_internal(
     password: String,
     local_auth_bypass: bool,
 ) -> Result<(), String> {
-    if !is_private_or_loopback_host(&target_host) {
-        return Err("Auth proxy target host must be localhost or private network IP".to_string());
+    if !utils::is_private_or_loopback(&target_host) {
+        return Err("认证代理仅支持本机或私有网络目标".into());
     }
-    let token = get_auth_token().to_string();
-    let auth_header = build_auth_header(&username, &password);
-    log::info!(
-        "Auth proxy init: target={}:{}, username='{}', auth_header={}, bypass={}",
-        target_host, target_port, username,
-        if auth_header.is_some() { "present" } else { "NONE" },
-        local_auth_bypass
-    );
-
-    let http_client = reqwest::Client::builder()
+    let client = reqwest::Client::builder()
         .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(45))
         .pool_max_idle_per_host(10)
         .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
-
-    let new_cfg = AuthProxyConfig {
-        target_host: target_host.clone(),
+        .map_err(|e| e.to_string())?;
+    let auth = if username.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "Basic {}",
+            base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+        ))
+    };
+    let cfg = AuthProxyConfig {
+        target_host,
         target_port,
-        auth_header,
-        secret_token: token.clone(),
+        auth_header: auth,
+        secret_token: get_auth_token().into(),
         local_auth_bypass,
         listen_port: port,
-        http_client,
+        http_client: client,
     };
-
-    if let Some(shared) = SHARED_CONFIG.get() {
-        let mut cfg = shared.write().await;
-        log::info!(
-            "Updating auth proxy config: target={}:{} (bypass={})",
-            target_host, target_port, local_auth_bypass
-        );
-        *cfg = new_cfg;
-
-        if AUTH_PROXY_LISTENING.load(Ordering::SeqCst) {
+    let mut active = LISTENER.lock().await;
+    if let Some(listener) = active.as_ref() {
+        if listener.port == port && !listener.task.is_finished() {
+            *listener.config.write().await = cfg;
             return Ok(());
         }
-        log::warn!("Auth proxy config exists but listener is not active, will attempt restart");
-    } else {
-        let config = Arc::new(RwLock::new(new_cfg.clone()));
-        if SHARED_CONFIG.set(config).is_err() {
-            if let Some(shared) = SHARED_CONFIG.get() {
-                let mut cfg = shared.write().await;
-                *cfg = new_cfg;
-                drop(cfg);
-            }
-        }
     }
-
-    if AUTH_PROXY_STARTING
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        log::info!("Auth proxy bind already in progress, waiting for it to complete...");
-        for _ in 0..100 {
-            if AUTH_PROXY_LISTENING.load(Ordering::SeqCst) {
-                log::info!("Auth proxy listener is now ready");
-                return Ok(());
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-        if AUTH_PROXY_LISTENING.load(Ordering::SeqCst) {
-            log::info!("Auth proxy listener became ready during final check");
-            return Ok(());
-        }
-        log::error!("Auth proxy bind wait timed out after 10s, listener not ready");
-        return Err("Auth proxy listener not ready after 10s wait".to_string());
-    }
-
-    if local_auth_bypass {
-        log::info!("Local auth bypass enabled - local browser access will not require authentication");
-    }
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = {
-        let mut last_err = None;
-        let mut bound = None;
-        for attempt in 0..5 {
-            match TcpListener::bind(addr).await {
-                Ok(l) => { bound = Some(l); break; }
-                Err(e) => {
-                    if e.kind() == std::io::ErrorKind::AddrInUse {
-                        if attempt == 0 {
-                            log::warn!("Auth proxy port {} in use, killing stale process", port);
-                            crate::utils::kill_process_by_port(port);
-                        }
-                        if attempt < 4 {
-                            log::warn!("Auth proxy port {} in use, retrying in 2s (attempt {}/5)", port, attempt + 1);
-                            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                        }
-                    }
-                    last_err = Some(e);
-                }
-            }
-        }
-        match bound {
-            Some(l) => l,
-            None => {
-                AUTH_PROXY_STARTING.store(false, Ordering::SeqCst);
-                let e = last_err.unwrap_or_else(|| std::io::Error::other("bind failed"));
-                return Err(format!("Failed to bind auth proxy on port {}: {}", port, e));
-            }
-        }
-    };
-
-    AUTH_PROXY_LISTENING.store(true, Ordering::SeqCst);
-    AUTH_PROXY_STARTING.store(false, Ordering::SeqCst);
-    log::info!("Auth proxy started on http://127.0.0.1:{}", port);
-
-    let config = SHARED_CONFIG.get().unwrap().clone();
-    let conn_limiter = auth_conn_limiter();
-    tokio::spawn(async move {
+    // Bind before replacing the active listener. Never terminate the port owner.
+    let socket = TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|e| format!("认证代理端口 {port} 无法绑定: {e}"))?;
+    let config = Arc::new(RwLock::new(cfg));
+    let shared = config.clone();
+    let task = tokio::spawn(async move {
+        let limit = Arc::new(Semaphore::new(32));
         loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    log::error!("Auth proxy accept error: {}", e);
-                    continue;
-                }
+            let (stream, _) = match socket.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
             };
-            let io = TokioIo::new(stream);
-            let config = config.clone();
-            let permit = match conn_limiter.clone().try_acquire_owned() {
-                Ok(permit) => permit,
-                Err(_) => {
-                    log::warn!(
-                        "Auth proxy reached max concurrent connections ({}), dropping connection",
-                        AUTH_PROXY_MAX_CONNECTIONS
-                    );
-                    continue;
-                }
+            let Ok(permit) = limit.clone().try_acquire_owned() else {
+                continue;
             };
-
+            let cfg = shared.clone();
             tokio::spawn(async move {
                 let _permit = permit;
-                let service = service_fn(move |req| {
-                    let config = config.clone();
-                    proxy_request(req, config)
-                });
-
-                if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
-                    if !e.to_string().contains("connection closed") {
-                        log::error!("Auth proxy connection error: {}", e);
-                    }
-                }
+                let service = service_fn(move |req| proxy_request(req, cfg.clone()));
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(120),
+                    http1::Builder::new()
+                        .serve_connection(TokioIo::new(stream), service)
+                        .with_upgrades(),
+                )
+                .await;
             });
         }
     });
-
+    if let Some(old) = active.replace(Listener { port, config, task }) {
+        old.task.abort();
+        let _ = old.task.await;
+    }
     Ok(())
 }
-
 #[tauri::command]
-pub async fn cmd_start_auth_proxy(
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let config = state.config.lock().await;
-    let port = config.auth_proxy_port;
-    let (target_host, target_port) = config.active_endpoint();
-    let (username, password) = config.active_credentials();
-    let local_auth_bypass = config.app_settings.local_auth_bypass;
-    drop(config);
-
-    start_auth_proxy_internal(port, target_host, target_port, username, password, local_auth_bypass).await?;
-
-    let mut auth_port = state.auth_proxy_port.lock().await;
-    *auth_port = port;
-
-    let token = get_auth_token();
-    Ok(format!("http://127.0.0.1:{}?_token={}", port, token))
+pub async fn cmd_start_auth_proxy(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    let _operation = state.operations.lock().await;
+    let config = state.config.lock().await.clone();
+    let (host, port) = config.active_endpoint();
+    let (user, pass) = config.active_credentials();
+    start_auth_proxy_internal(
+        config.auth_proxy_port,
+        host,
+        port,
+        user,
+        pass,
+        config.app_settings.local_auth_bypass,
+    )
+    .await?;
+    *state.auth_proxy_port.lock().await = config.auth_proxy_port;
+    Ok(format!(
+        "http://127.0.0.1:{}?_token={}",
+        config.auth_proxy_port,
+        get_auth_token()
+    ))
 }
-
 #[tauri::command]
-pub async fn cmd_get_auth_proxy_url(
-    state: tauri::State<'_, AppState>,
-) -> Result<String, String> {
-    let port = state.auth_proxy_port.lock().await;
-    Ok(format!("http://127.0.0.1:{}", port))
+pub async fn cmd_get_auth_proxy_url(state: tauri::State<'_, AppState>) -> Result<String, String> {
+    Ok(format!(
+        "http://127.0.0.1:{}?_token={}",
+        *state.auth_proxy_port.lock().await,
+        get_auth_token()
+    ))
 }
-
 #[tauri::command]
-pub async fn cmd_probe_auth_proxy(
-    state: tauri::State<'_, AppState>,
-) -> Result<bool, String> {
-    if !AUTH_PROXY_LISTENING.load(Ordering::SeqCst) {
-        return Ok(false);
-    }
+pub async fn cmd_probe_auth_proxy(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let port = *state.auth_proxy_port.lock().await;
-    let url = format!("http://127.0.0.1:{}/__health", port);
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
         .no_proxy()
+        .timeout(Duration::from_secs(5))
         .build()
         .map_err(|e| e.to_string())?;
-    match client.get(&url).send().await {
-        Ok(resp) => Ok(resp.status().is_success()),
-        Err(_) => Ok(false),
+    Ok(client
+        .get(format!(
+            "http://127.0.0.1:{port}/__health?_token={}",
+            get_auth_token()
+        ))
+        .send()
+        .await
+        .is_ok_and(|r| r.status().is_success()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn fixture() -> (String, tokio::task::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let cfg = Arc::new(RwLock::new(AuthProxyConfig {
+            target_host: "127.0.0.1".into(),
+            target_port: 1,
+            auth_header: None,
+            secret_token: "correct-fixture-token".into(),
+            local_auth_bypass: false,
+            listen_port: port,
+            http_client: reqwest::Client::builder()
+                .no_proxy()
+                .timeout(std::time::Duration::from_secs(1))
+                .build()
+                .unwrap(),
+        }));
+        let task = tokio::spawn(async move {
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                let cfg = cfg.clone();
+                tokio::spawn(async move {
+                    let service = service_fn(move |req| proxy_request(req, cfg.clone()));
+                    let _ = http1::Builder::new()
+                        .serve_connection(TokioIo::new(socket), service)
+                        .await;
+                });
+            }
+        });
+        (format!("http://127.0.0.1:{port}"), task)
+    }
+
+    #[tokio::test]
+    async fn forged_referer_cannot_authorize() {
+        let (url, task) = fixture().await;
+        let resp = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!("{url}/"))
+            .header("Referer", format!("{url}/?_token=wrong"))
+            .send()
+            .await
+            .unwrap();
+        task.abort();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn tauri_origin_alone_is_not_a_credential() {
+        let (url, task) = fixture().await;
+        let resp = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!("{url}/"))
+            .header("Origin", "tauri://localhost")
+            .send()
+            .await
+            .unwrap();
+        task.abort();
+        assert_eq!(resp.status(), 403);
+    }
+
+    #[tokio::test]
+    async fn readiness_fails_when_upstream_is_unavailable() {
+        let (url, task) = fixture().await;
+        let resp = reqwest::Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(format!("{url}/__health?_token=correct-fixture-token"))
+            .send()
+            .await
+            .unwrap();
+        task.abort();
+        assert!(!resp.status().is_success());
+    }
+}
+
+async fn proxy_websocket(
+    mut req: Request<hyper::body::Incoming>,
+    cfg: &AuthProxyConfig,
+) -> Response<ProxyBody> {
+    let mut upstream = cfg
+        .http_client
+        .get(utils::http_url(
+            &cfg.target_host,
+            cfg.target_port,
+            &clean_path(req.uri()),
+        ))
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket");
+    for name in [
+        "sec-websocket-key",
+        "sec-websocket-version",
+        "sec-websocket-protocol",
+        "sec-websocket-extensions",
+    ] {
+        if let Some(value) = req.headers().get(name) {
+            upstream = upstream.header(name, value);
+        }
+    }
+    if let Some(auth) = &cfg.auth_header {
+        upstream = upstream.header("Authorization", auth);
+    }
+    let response = match upstream.send().await {
+        Ok(r) if r.status() == 101 => r,
+        _ => return error(502, "WebSocket 上游握手失败"),
+    };
+    let mut builder = Response::builder()
+        .status(101)
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "websocket");
+    for name in [
+        "sec-websocket-accept",
+        "sec-websocket-protocol",
+        "sec-websocket-extensions",
+    ] {
+        if let Some(value) = response.headers().get(name) {
+            builder = builder.header(name, value);
+        }
+    }
+    let downstream = hyper::upgrade::on(&mut req);
+    tokio::spawn(async move {
+        if let (Ok(down), Ok(mut up)) = tokio::join!(downstream, response.upgrade()) {
+            let mut down = TokioIo::new(down);
+            let _ = tokio::time::timeout(
+                Duration::from_secs(3600),
+                tokio::io::copy_bidirectional(&mut down, &mut up),
+            )
+            .await;
+        }
+    });
+    builder.body(full("")).unwrap()
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    #[tokio::test]
+    async fn session_streaming_upgrade_and_rebinding() {
+        let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = upstream.local_addr().unwrap().port();
+        let task = tokio::spawn(async move {
+            loop {
+                let (socket, _) = upstream.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let service =
+                        service_fn(|mut req: Request<hyper::body::Incoming>| async move {
+                            assert_eq!(
+                                req.headers().get("authorization").unwrap(),
+                                "Basic dXNlcjpwYXNz"
+                            );
+                            if req.uri().path() == "/ws" {
+                                let on = hyper::upgrade::on(&mut req);
+                                tokio::spawn(async move {
+                                    let mut socket = TokioIo::new(on.await.unwrap());
+                                    let mut bytes = [0; 3];
+                                    socket.read_exact(&mut bytes).await.unwrap();
+                                    socket.write_all(&bytes).await.unwrap();
+                                });
+                                return Ok::<_, Infallible>(
+                                    Response::builder()
+                                        .status(101)
+                                        .header("connection", "upgrade")
+                                        .header("upgrade", "websocket")
+                                        .body(full(""))
+                                        .unwrap(),
+                                );
+                            }
+                            if req.uri().path() == "/large" {
+                                return Ok(Response::new(full(vec![7; 10 * 1024 * 1024])));
+                            }
+                            Ok(Response::new(full("fixture-ok")))
+                        });
+                    let _ = http1::Builder::new()
+                        .serve_connection(TokioIo::new(socket), service)
+                        .with_upgrades()
+                        .await;
+                });
+            }
+        });
+        let free = || {
+            std::net::TcpListener::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port()
+        };
+        let port = free();
+        let next = free();
+        let blocker = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let blocked = blocker.local_addr().unwrap().port();
+        start_auth_proxy_internal(
+            port,
+            "127.0.0.1".into(),
+            target,
+            "user".into(),
+            "pass".into(),
+            false,
+        )
+        .await
+        .unwrap();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .unwrap();
+        let root = format!("http://127.0.0.1:{port}");
+        let cookie = format!("{}={}", cookie_name(port), get_auth_token());
+        assert_eq!(
+            client
+                .get(&root)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap(),
+            "fixture-ok"
+        );
+        assert_eq!(
+            client
+                .get(&root)
+                .header("cookie", &cookie)
+                .header("origin", "https://untrusted.invalid")
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            403
+        );
+        let response = client
+            .get(format!("{root}/large"))
+            .header("cookie", &cookie)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.bytes().await.unwrap().len(), 10 * 1024 * 1024);
+        let response = client
+            .post(&root)
+            .header("cookie", &cookie)
+            .body(vec![0; 9 * 1024 * 1024])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 413);
+        let response = client
+            .get(format!("{root}/ws"))
+            .header("cookie", &cookie)
+            .header("connection", "upgrade")
+            .header("upgrade", "websocket")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 101);
+        let mut socket = response.upgrade().await.unwrap();
+        socket.write_all(b"abc").await.unwrap();
+        let mut buf = [0; 3];
+        socket.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"abc");
+        assert!(start_auth_proxy_internal(
+            blocked,
+            "127.0.0.1".into(),
+            target,
+            "user".into(),
+            "pass".into(),
+            false
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            client
+                .get(&root)
+                .header("cookie", &cookie)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        start_auth_proxy_internal(
+            next,
+            "127.0.0.1".into(),
+            target,
+            "user".into(),
+            "pass".into(),
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_err());
+        assert_eq!(
+            client
+                .get(format!(
+                    "http://127.0.0.1:{next}/?_token={}",
+                    get_auth_token()
+                ))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        stop_auth_proxy().await;
+        task.abort();
+    }
+}
+
+async fn read_upload(mut incoming: hyper::body::Incoming) -> Result<Bytes, u16> {
+    const LIMIT: usize = 8 * 1024 * 1024;
+    let mut result = Vec::new();
+    let mut received = 0usize;
+    while let Some(frame) = incoming.frame().await {
+        let frame = frame.map_err(|_| 400u16)?;
+        if let Ok(data) = frame.into_data() {
+            received = received.saturating_add(data.len());
+            if received <= LIMIT {
+                result.extend_from_slice(&data);
+            }
+            // Drain a bounded excess so ordinary oversized uploads receive the
+            // 413 response instead of a TCP reset while they are still writing.
+            if received > 4 * LIMIT {
+                return Err(413);
+            }
+        }
+    }
+    if received > LIMIT {
+        Err(413)
+    } else {
+        Ok(Bytes::from(result))
     }
 }
