@@ -172,7 +172,7 @@ try {
   const cert = await invoke("cmd_check_cert_installed");
   assert.equal(typeof cert, "boolean");
   console.log("PASS: current CA fingerprint check completed read-only");
-  if (process.env.WHISTLEBOX_TEST_SYSTEM === '1') await verifyWindowsSystem(invoke);
+  if (process.env.WHISTLEBOX_TEST_SYSTEM === '1') await verifyWindowsSystem(invoke, child.pid);
   await invoke("cmd_stop_whistle");
   assert.equal((await invoke("cmd_get_whistle_status")).running, false);
   const close = once(child, "exit");
