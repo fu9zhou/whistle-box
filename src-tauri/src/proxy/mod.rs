@@ -166,13 +166,15 @@ pub async fn cmd_repair_network(
     state: tauri::State<'_, AppState>,
 ) -> Result<RepairResult, String> {
     let result = cmd_clear_proxy(app, state).await;
-    let mut steps = vec![RepairStep {
+    let steps = vec![RepairStep {
         name: "恢复 WhistleBox 接管前的代理设置".into(),
         success: result.is_ok(),
         message: result
             .err()
             .unwrap_or_else(|| "已释放本应用的代理设置；保留其他软件后续修改".into()),
     }];
+    #[cfg(windows)]
+    let mut steps = steps;
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
