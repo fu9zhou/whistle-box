@@ -433,7 +433,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                     <div className="text-[11px] text-surface-300 bg-accent-950/30 border border-accent-800/20 rounded-lg px-3 py-2.5 text-center leading-relaxed">
                       证书仅安装到当前用户的受信任根证书存储区
                       <br />
-                      也可以稍后在设置中安装
+                      请在 Windows 证书确认窗口中确认，也可以稍后在设置中安装
                     </div>
                   </>
                 )}

@@ -315,6 +315,7 @@ export default function Settings() {
                   {s.form.interceptHttps
                     ? "已启用 HTTPS 拦截，需安装根证书才能正常抓包。"
                     : "如需使用 HTTPS 拦截，请提前安装根证书。"}
+                  安装或移除时，请留意 Windows 证书确认窗口。
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
