@@ -24,11 +24,11 @@ jobs:
         shell: bash
         run: |
           [[ "$JOB_ID" =~ ^[0-9]+$ ]] || exit 1
-          gh api "repos/$GH_REPO/actions/jobs/$JOB_ID/logs" > job.log 2>&1 || true
+          gh api --allow-escape-sequences "repos/$GH_REPO/actions/jobs/$JOB_ID/logs" > job.log 2>&1 || true
           tail -n 180 job.log | node -e '
             let text = "";
             process.stdin.on("data", chunk => text += chunk);
             process.stdin.on("end", () => {
-              const safe = text.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+              const safe = require("node:util").stripVTControlCharacters(text).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
               console.log("::notice title=任务日志尾部::" + safe);
             });'
