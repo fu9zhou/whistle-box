@@ -1,0 +1,34 @@
+name: 构建日志诊断
+
+on:
+  workflow_dispatch:
+    inputs:
+      job-id:
+        description: 当前仓库中需要读取日志的任务 ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 读取任务日志尾部
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          JOB_ID: ${{ inputs.job-id }}
+        shell: bash
+        run: |
+          [[ "$JOB_ID" =~ ^[0-9]+$ ]] || exit 1
+          gh api "repos/$GH_REPO/actions/jobs/$JOB_ID/logs" > job.log
+          tail -n 180 job.log | node -e '
+            let text = "";
+            process.stdin.on("data", chunk => text += chunk);
+            process.stdin.on("end", () => {
+              const safe = text.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+              console.log("::notice title=任务日志尾部::" + safe);
+            });'
