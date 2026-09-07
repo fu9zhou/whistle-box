@@ -24,7 +24,7 @@ jobs:
         shell: bash
         run: |
           [[ "$JOB_ID" =~ ^[0-9]+$ ]] || exit 1
-          gh api "repos/$GH_REPO/actions/jobs/$JOB_ID/logs" > job.log
+          gh api "repos/$GH_REPO/actions/jobs/$JOB_ID/logs" > job.log 2>&1 || true
           tail -n 180 job.log | node -e '
             let text = "";
             process.stdin.on("data", chunk => text += chunk);
