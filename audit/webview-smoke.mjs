@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:net";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { transform } from "esbuild";
 import { chromium } from "playwright-core";
@@ -46,8 +46,12 @@ const child = spawn(executable, [], {
     WEBVIEW2_USER_DATA_FOLDER: resolve(dir, "webview"),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort}`,
   },
-  stdio: "ignore",
+  stdio: ["ignore", "pipe", "pipe"],
 });
+let startupOutput = '';
+for (const stream of [child.stdout, child.stderr]) {
+  stream.on('data', (data) => { startupOutput = (startupOutput + data.toString()).slice(-8000); });
+}
 let browser;
 let page;
 const invoke = async (command, args = {}) =>
@@ -174,7 +178,14 @@ try {
 
 } catch (e) {
   if (process.env.GITHUB_ACTIONS === 'true') {
-    console.error(`::error title=WebView2 验证失败::${String(e.message).slice(0, 2000).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+    const annotate = (title, value) => console.error(`::error title=${title}::${String(value).slice(-8000).replaceAll('fixture-secret', '[redacted]').replace(/([?&]token=)[^\s&]+/g, '$1[redacted]').replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+    annotate('WebView2 验证失败', e?.message ?? e);
+    const logPath = resolve(dir, 'whistlebox.log');
+    annotate('应用启动诊断', `pid=${child.pid}, exit=${child.exitCode}, signal=${child.signalCode}\n${startupOutput}\n${existsSync(logPath) ? readFileSync(logPath, 'utf8').slice(-5000) : '应用尚未创建日志文件'}`);
+    try {
+      const processes = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq ${child.pid} -or $_.ParentProcessId -eq ${child.pid} } | Select-Object Name,ProcessId,ParentProcessId,ExecutablePath | ConvertTo-Json -Compress`], { windowsHide: true, encoding: 'utf8', timeout: 10000 });
+      annotate('应用进程诊断', processes);
+    } catch (diagnosticError) { annotate('进程诊断失败', diagnosticError.message); }
   }
   if (page) await page.screenshot({ path: "test-results/tauri-failure.png" }).catch(() => {});
   throw e;
