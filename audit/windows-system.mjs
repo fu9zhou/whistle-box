@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import { resolve } from 'node:path';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 export async function verifyWindowsSystem(nativeInvoke, appPid) {
@@ -31,8 +32,10 @@ export async function verifyWindowsSystem(nativeInvoke, appPid) {
   });
   assert.equal(certificate.status, 200);
   const thumbprint = new X509Certificate(Buffer.from(await certificate.arrayBuffer())).fingerprint.replaceAll(':', '');
+  assert.ok(Number.isInteger(appPid) && appPid > 0);
   const confirmCertificate = async (command) => {
-    const helper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', resolve('audit/confirm-test-certificate.ps1'), '-AppProcessId', String(appPid), '-Thumbprint', thumbprint], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const script = `& {${readFileSync(resolve('audit/confirm-test-certificate.ps1'), 'utf8')}} -AppProcessId ${appPid} -Thumbprint '${thumbprint}'`;
+    const helper = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     for (const stream of [helper.stdout, helper.stderr]) stream.on('data', (data) => { output = (output + data.toString()).slice(-5000); });
     try { await invoke(command); }

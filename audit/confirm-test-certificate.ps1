@@ -19,9 +19,16 @@ public class TestCertDialog {
   [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr window, EnumProc callback, IntPtr arg);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr window, StringBuilder text, int length);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr window, uint message, UIntPtr wParam, StringBuilder text, uint flags, uint timeout, out UIntPtr result);
   [DllImport("user32.dll")] static extern IntPtr GetDlgItem(IntPtr window, int id);
   [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
-  static string Read(IntPtr window) { var text = new StringBuilder(8192); GetWindowText(window, text, text.Capacity); return text.ToString(); }
+  static string Read(IntPtr window) {
+    var text = new StringBuilder(8192);
+    UIntPtr result;
+    if (SendMessageTimeout(window, 0x000D, new UIntPtr((uint)text.Capacity), text, 2, 250, out result) == IntPtr.Zero)
+      GetWindowText(window, text, text.Capacity);
+    return text.ToString();
+  }
   public static TestCertDialog[] Find(uint[] owners) {
     var found = new List<TestCertDialog>();
     EnumWindows((window, arg) => {
