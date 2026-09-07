@@ -6,7 +6,7 @@ export async function verifyWindowsSystem(invoke) {
     throw Error('系统变更验证仅限 GitHub 托管的临时运行环境');
   }
   const ps = (script) => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8' }).trim();
-  const prefix = "$ErrorActionPreference='Stop'; $k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Internet Settings',$true); ";
+  const prefix = String.raw`$ErrorActionPreference='Stop'; $k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Internet Settings',$true); `;
   const read = () => JSON.parse(ps(prefix + "$v=@{}; foreach($n in @('ProxyEnable','ProxyServer','ProxyOverride','AutoConfigURL')) { $v[$n]=$k.GetValue($n,$null) }; $k.Close(); ConvertTo-Json -InputObject $v -Compress"));
   const before = read();
   const autoBefore = await invoke('cmd_get_autostart');
