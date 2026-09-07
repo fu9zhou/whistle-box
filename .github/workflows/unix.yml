@@ -42,7 +42,8 @@ jobs:
           rustup default stable
           rustup component add rustfmt clippy
           printf '[net]\n' > src-tauri/.cargo/config.toml
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: rust-cache
         with:
           path: |
             ~/.cargo/registry
@@ -61,18 +62,16 @@ jobs:
         working-directory: src-tauri
         run: |
           cargo fmt --check
-          cargo test --locked --lib --no-default-features
-          cargo clippy --locked --lib --tests --no-default-features -- -D warnings
-          cargo build --locked --example ui_fixture
+          node ../scripts/ci-command.mjs cargo test --locked --lib --no-default-features
+          node ../scripts/ci-command.mjs cargo clippy --locked --lib --tests --no-default-features -- -D warnings
+          node ../scripts/ci-command.mjs cargo build --locked --example ui_fixture
       - name: 验证真实 Whistle 与进程生命周期
         run: |
           npm run test:contracts
           npm run test:lifecycle
       - name: 构建安装包
-        run: npm run package
+        run: node scripts/ci-command.mjs npm run package
       - name: 收集安装包与校验文件
-        env:
-          BUILD_PLATFORM: ${{ matrix.platform }}
         run: |
           mkdir -p release
           find src-tauri/target/release/bundle -type f \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' \) -exec cp {} release/ \;
@@ -83,3 +82,12 @@ jobs:
           name: ${{ matrix.platform }}
           path: release/*
           if-no-files-found: error
+      - name: 保存 Rust 构建缓存
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ matrix.platform }}-rust-${{ hashFiles('src-tauri/Cargo.lock') }}

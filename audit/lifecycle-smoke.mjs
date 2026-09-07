@@ -15,6 +15,13 @@ async function free() {
   return p;
 }
 const children = [];
+const triple = {
+  win32: `${process.arch === "arm64" ? "aarch64" : "x86_64"}-pc-windows-msvc.exe`,
+  darwin: `${process.arch === "arm64" ? "aarch64" : "x86_64"}-apple-darwin`,
+  linux: `${process.arch === "arm64" ? "aarch64" : "x86_64"}-unknown-linux-gnu`,
+}[process.platform];
+if (!triple) throw new Error(`Unsupported platform: ${process.platform}`);
+const nodeBinary = resolve(`src-tauri/binaries/node-${triple}`);
 async function fixture(name, port = undefined) {
   port ??= await free();
   const auth = await free();
@@ -80,7 +87,7 @@ try {
   other.child.kill();
   await crashed;
   await stopped(other.port);
-  console.log("PASS: Windows Job Object reaps embedded child after parent is terminated");
+  console.log("PASS: embedded child exits after parent is terminated");
   // Verify the actual launcher forwards via configured upstream proxy.
   const proxy = createServer((req, res) => {
     res.end("upstream:" + req.url);
@@ -91,11 +98,10 @@ try {
     const dir = resolve(".tooling/lifecycle/upstream");
     mkdirSync(dir, { recursive: true });
     const port = await free();
-    const child = spawn(
-      resolve("src-tauri/binaries/node-x86_64-pc-windows-msvc.exe"),
-      [resolve("src-tauri/resources/whistle/launcher.cjs")],
-      { windowsHide: true, stdio: ["pipe", "ignore", "ignore"] },
-    );
+    const child = spawn(nodeBinary, [resolve("src-tauri/resources/whistle/launcher.cjs")], {
+      windowsHide: true,
+      stdio: ["pipe", "ignore", "ignore"],
+    });
     children.push(child);
     child.stdin.write(
       JSON.stringify({
