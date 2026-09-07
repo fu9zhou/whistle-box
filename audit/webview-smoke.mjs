@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { transform } from "esbuild";
 import { chromium } from "playwright-core";
 import assert from "node:assert/strict";
+import { runInNewContext } from 'node:vm';
 import { verifyWindowsSystem } from './windows-system.mjs';
 const executable = resolve(process.env.WHISTLEBOX_TEST_EXECUTABLE || "src-tauri/target/release/whistle-box.exe");
 const defaults = await transform(readFileSync("src/defaults.ts", "utf8"), {
@@ -80,6 +81,17 @@ try {
   const after = await invoke("cmd_get_whistle_status");
   assert.equal(after.pid, before.pid);
   console.log("PASS: embedded Whistle rendered inside actual WebView2 and stayed healthy");
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  for (const label of ['仪表盘', '代理', '规则', '配置', '设置']) {
+    await page.locator('nav').getByRole('button', { name: label, exact: true }).click();
+    await page.locator('h1').first().waitFor();
+    await page.screenshot({ path: `test-results/page-${label}.png` });
+  }
+  await page.locator('nav').getByRole('button', { name: 'Whistle', exact: true }).click();
+  await page.frameLocator('iframe').locator('#container > *').first().waitFor({ timeout: 40000 });
+  assert.deepEqual(pageErrors, []);
+  console.log('PASS: all six application pages render and Whistle reloads after navigation');
   // Real command reconfiguration and rollback, without enabling system proxy.
   let base = await invoke("cmd_get_config");
   let next = structuredClone(base);
@@ -114,10 +126,20 @@ try {
   await invoke('cmd_export_config', { path: configExport });
   base = await invoke('cmd_get_config');
   next = structuredClone(base);
-  next.profiles.push({ id: 'roundtrip', name: '导入导出验证', rules: [] });
+  next.profiles.push({ id: 'roundtrip', name: '导入导出验证', rules: [
+    { id: 'exact', pattern: 'example.test', enabled: true, comment: '' },
+    { id: 'off', pattern: 'disabled.test', enabled: false, comment: '' },
+  ] });
   await invoke('cmd_save_config', { config: next, baseConfig: base });
   await invoke('cmd_switch_profile', { profileId: 'roundtrip' });
   assert.equal((await invoke('cmd_get_config')).active_profile_id, 'roundtrip');
+  await invoke('cmd_start_pac_server');
+  await invoke('cmd_refresh_pac');
+  const pacBody = await (await fetch(await invoke('cmd_get_pac_url'))).text();
+  const chooseProxy = runInNewContext(pacBody + '; FindProxyForURL');
+  assert.equal(chooseProxy('http://example.test/', 'EXAMPLE.TEST'), `PROXY 127.0.0.1:${base.whistle.port}`);
+  assert.equal(chooseProxy('http://disabled.test/', 'disabled.test'), 'DIRECT');
+  assert.equal(chooseProxy('http://other.test/', 'other.test'), 'DIRECT');
   await invoke('cmd_import_config', { path: configExport });
   assert.deepEqual(await invoke('cmd_get_config'), base);
   await assert.rejects(invoke('cmd_switch_profile', { profileId: 'missing' }));
@@ -128,6 +150,15 @@ try {
   await invoke('cmd_export_whistle_rules', { path: rulesExport });
   assert.match(readFileSync(rulesExport, 'utf8'), /example\.test/);
   console.log('PASS: native profile switching, config import/export and Whistle rule round trip');
+  for (const enable of [false, true]) {
+    await invoke('cmd_sync_https_interception', { enable });
+    const current = await invoke('cmd_get_config');
+    const init = await (await fetch(`http://127.0.0.1:${current.whistle.port}/cgi-bin/init`, {
+      headers: { Authorization: `Basic ${Buffer.from(`${current.whistle.username}:${current.whistle.password}`).toString('base64')}` },
+    })).json();
+    assert.equal(init.interceptHttpsConnects, enable);
+  }
+  console.log('PASS: actual PAC routing and HTTPS capture switch');
   const cert = await invoke("cmd_check_cert_installed");
   assert.equal(typeof cert, "boolean");
   console.log("PASS: current CA fingerprint check completed read-only");
