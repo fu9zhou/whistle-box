@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Minus, Square, Copy, X, Sun, Moon } from "lucide-react";
 import { useAppStore } from "../../stores/appStore";
+import { version } from "../../../package.json";
 
 export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false);
-  const [appVersion, setAppVersion] = useState("v0.1.0");
+  const [appVersion, setAppVersion] = useState(`v${version}`);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
 
