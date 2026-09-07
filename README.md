@@ -143,4 +143,13 @@ site/                       项目网站
 
 欢迎提交可复现的问题和改进建议。修改前运行相关测试，为修复的行为补充回归用例；提交合并请求时说明问题、修改效果与验证方式。请使用中文编写用户文案、文档和问题描述，代码标识符沿用现有约定。
 
+提交信息遵循[提交规范](.agents/skills/commit-messages/SKILL.md)：使用英文小写类型和模块、中文摘要，以及说明实际改动的中文列表正文。例如：
+
+```text
+fix(whistle): 修复内置实例启动时的端口冲突提示
+
+- 检测监听端口并显示冲突原因
+- 保留已运行的外部 Whistle 实例
+```
+
 项目基于 [Whistle](https://github.com/avwo/whistle)、[Tauri](https://github.com/tauri-apps/tauri)、React 与 Rust 构建，采用 MIT 许可证。第三方组件遵循各自许可证。
