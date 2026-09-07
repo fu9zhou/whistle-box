@@ -68,12 +68,14 @@ jobs:
           rustup component add rustfmt clippy
           Set-Content src-tauri/.cargo/config.toml '[net]'
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: rust-cache
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
           key: windows-rust-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: windows-rust-
       - name: 安装锁定依赖与内置运行时
         run: |
           npm ci
@@ -105,6 +107,9 @@ jobs:
           npm run test:browser
       - name: 构建中文安装包
         run: npm run package
+      - name: 确认 WebView2 运行时
+        timeout-minutes: 5
+        run: ./scripts/ensure-webview2.ps1
       - name: WebView2 与 Windows 系统功能验证
         timeout-minutes: 5
         env:
@@ -132,7 +137,7 @@ jobs:
             .tooling/webview-fixture/*.log
           if-no-files-found: ignore
       - name: 保存 Rust 构建缓存
-        if: always()
+        if: always() && steps.rust-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
