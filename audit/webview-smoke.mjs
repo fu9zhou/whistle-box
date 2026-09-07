@@ -110,6 +110,24 @@ try {
     await new Promise((r) => blocker.close(r));
   }
   console.log("PASS: native config applies live port changes and rolls back occupied auth port");
+  const configExport = resolve(dir, 'exported-config.json');
+  await invoke('cmd_export_config', { path: configExport });
+  base = await invoke('cmd_get_config');
+  next = structuredClone(base);
+  next.profiles.push({ id: 'roundtrip', name: '导入导出验证', rules: [] });
+  await invoke('cmd_save_config', { config: next, baseConfig: base });
+  await invoke('cmd_switch_profile', { profileId: 'roundtrip' });
+  assert.equal((await invoke('cmd_get_config')).active_profile_id, 'roundtrip');
+  await invoke('cmd_import_config', { path: configExport });
+  assert.deepEqual(await invoke('cmd_get_config'), base);
+  await assert.rejects(invoke('cmd_switch_profile', { profileId: 'missing' }));
+  const rulesImport = resolve(dir, 'rules-import.txt');
+  const rulesExport = resolve(dir, 'rules-export.json');
+  writeFileSync(rulesImport, 'example.test 127.0.0.1');
+  await invoke('cmd_import_whistle_rules', { path: rulesImport });
+  await invoke('cmd_export_whistle_rules', { path: rulesExport });
+  assert.match(readFileSync(rulesExport, 'utf8'), /example\.test/);
+  console.log('PASS: native profile switching, config import/export and Whistle rule round trip');
   const cert = await invoke("cmd_check_cert_installed");
   assert.equal(typeof cert, "boolean");
   console.log("PASS: current CA fingerprint check completed read-only");

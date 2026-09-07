@@ -28,7 +28,7 @@ jobs:
           mkdir -p test-results
           npm audit --package-lock-only --json > test-results/npm-audit.json || true
           npm audit --prefix src-tauri/resources/whistle --package-lock-only --json > test-results/whistle-audit.json || true
-          node -e 'for(const p of ["npm-audit","whistle-audit"]){ const r=require("./test-results/"+p+".json"); if(!r.metadata) throw Error(p+": 查询未完成"); console.log(p, r.metadata.vulnerabilities); }'
+          node scripts/check-audit.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -119,7 +119,7 @@ jobs:
   release:
     name: 发布发行版
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, dependencies]
     runs-on: ubuntu-latest
     permissions:
       contents: write
