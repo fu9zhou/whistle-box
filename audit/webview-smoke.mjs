@@ -45,7 +45,7 @@ const child = spawn(executable, [], {
     RUST_LOG: "info",
     WHISTLEBOX_DATA_DIR: dir,
     WEBVIEW2_USER_DATA_FOLDER: resolve(dir, "webview"),
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort}`,
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${debugPort} ${process.env.WHISTLEBOX_TEST_BROWSER_ARGS || ''}`.trim(),
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
