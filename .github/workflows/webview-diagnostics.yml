@@ -8,6 +8,11 @@ on:
         required: false
         default: ''
         type: string
+      system-checks:
+        description: 在临时运行环境验证系统代理、证书和开机启动
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -47,6 +52,7 @@ jobs:
         timeout-minutes: 5
         env:
           WHISTLEBOX_TEST_BROWSER_ARGS: ${{ inputs.browser-arguments }}
+          WHISTLEBOX_TEST_SYSTEM: ${{ inputs.system-checks && '1' || '0' }}
         run: npm run test:webview
       - name: 保存诊断
         if: always()
