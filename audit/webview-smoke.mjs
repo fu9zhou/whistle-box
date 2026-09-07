@@ -173,6 +173,9 @@ try {
   console.log("PASS: native owned service stop, installer maintenance shutdown and standalone cleanup entry");
 
 } catch (e) {
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    console.error(`::error title=WebView2 验证失败::${String(e.message).slice(0, 2000).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+  }
   if (page) await page.screenshot({ path: "test-results/tauri-failure.png" }).catch(() => {});
   throw e;
 } finally {

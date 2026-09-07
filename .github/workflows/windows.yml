@@ -19,17 +19,17 @@ jobs:
     name: 依赖漏洞查询
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.21.1'
+          node-version: '22.23.2'
       - name: 查询依赖公告
         run: |
           mkdir -p test-results
           npm audit --package-lock-only --json > test-results/npm-audit.json || true
           npm audit --prefix src-tauri/resources/whistle --package-lock-only --json > test-results/whistle-audit.json || true
           node scripts/check-audit.mjs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: dependency-audit
@@ -42,10 +42,10 @@ jobs:
       run:
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22.21.1'
+          node-version: '22.23.2'
           cache: npm
       - name: 配置 Rust
         run: |
@@ -53,7 +53,7 @@ jobs:
           rustup default stable
           rustup component add rustfmt clippy
           Set-Content src-tauri/.cargo/config.toml '[net]'
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -92,23 +92,25 @@ jobs:
       - name: 构建中文安装包
         run: npm run package
       - name: WebView2 与 Windows 系统功能验证
+        timeout-minutes: 5
         env:
           WHISTLEBOX_TEST_SYSTEM: '1'
         run: npm run test:webview
       - name: 安装、升级与卸载验证
+        timeout-minutes: 10
         run: ./scripts/test-installer.ps1
       - name: 生成校验文件
         run: |
           Get-ChildItem release/*-setup.exe | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - name: 上传安装包
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: windows-x64
           path: release/*
           if-no-files-found: error
       - name: 保存诊断截图和日志
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: validation-results
           path: |
@@ -117,7 +119,7 @@ jobs:
           if-no-files-found: ignore
       - name: 保存 Rust 构建缓存
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -133,8 +135,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: windows-x64
           path: release
