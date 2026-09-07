@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer } from "node:net";
 import assert from "node:assert/strict";
@@ -69,7 +69,7 @@ try {
   const isolated = await start("isolated", true);
   const info = await (await fetch(isolated.url + "/cgi-bin/server-info")).json();
   assert.equal(info.server.pid, isolated.child.pid);
-  assert.equal(info.server.version, "2.10.2");
+  assert.equal(info.server.version, JSON.parse(readFileSync("src-tauri/resources/whistle/package.json", "utf8")).dependencies.whistle);
   console.log("PASS: direct API with rcPath none has owned PID and ignores user rc");
   assert.equal((await fetch(isolated.url + "/cgi-bin/stop")).status, 404);
   console.log("CONFIRMED: /cgi-bin/stop is 404");

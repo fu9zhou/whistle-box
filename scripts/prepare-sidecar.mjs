@@ -8,19 +8,19 @@ import { createWriteStream, unlinkSync } from "fs";
 import { createGunzip } from "zlib";
 import { createHash } from "crypto";
 
-const NODE_VERSION = "v22.21.1";
+const NODE_VERSION = "v22.23.2";
 
 const NODE_SHA256 = {
-  "win-x64/node.exe": "471961cb355311c9a9dd8ba417eca8269ead32a2231653084112554cda52e8b3",
-  "win-arm64/node.exe": "707bbc8a9e615299ecdbff9040f88f59f20033ff1af923beee749b885cbd565d",
-  "node-v22.21.1-darwin-x64.tar.gz":
-    "8e3dc89614debe66c2a6ad2313a1adb06eb37db6cd6c40d7de6f7d987f7d1afd",
-  "node-v22.21.1-darwin-arm64.tar.gz":
-    "c170d6554fba83d41d25a76cdbad85487c077e51fa73519e41ac885aa429d8af",
-  "node-v22.21.1-linux-x64.tar.gz":
-    "219a152ea859861d75adea578bdec3dce8143853c13c5187f40c40e77b0143b2",
-  "node-v22.21.1-linux-arm64.tar.gz":
-    "c86830dedf77f8941faa6c5a9c863bdfdd1927a336a46943decc06a38f80bfb2",
+  "node-v22.23.2-darwin-arm64.tar.gz":
+    "61130f394c1630d211dd50aecc4353d379480f36d3ac913cd85dbba1aed585c6",
+  "node-v22.23.2-darwin-x64.tar.gz":
+    "58e99022c2ff89395576cc7fd4d98cea24bb68081475d5f88b801ee8729fb026",
+  "node-v22.23.2-linux-arm64.tar.gz":
+    "013b59cfd2819703a6f4a14ab891fc46fc2a4e3f5bcd92de3fb4929b43e35b30",
+  "node-v22.23.2-linux-x64.tar.gz":
+    "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
+  "win-arm64/node.exe": "97cce5301a815d2dce07ac5bfd1e6039eae88185ec1d10ae4f8cb712f1732878",
+  "win-x64/node.exe": "0d0f5e39f9f3d9587bc19f73eab3c2c9c4903fd02d6dbf9c853dd81b3d95fad4",
 };
 
 const PLATFORM_MAP = {

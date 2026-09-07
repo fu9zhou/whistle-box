@@ -2,6 +2,9 @@
   "name": "whistlebox-whistle",
   "private": true,
   "dependencies": {
-    "whistle": "2.10.2"
+    "whistle": "2.10.9"
+  },
+  "overrides": {
+    "qs": "6.16.0"
   }
 }
