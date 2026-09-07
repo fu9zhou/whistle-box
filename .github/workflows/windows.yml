@@ -53,7 +53,7 @@ jobs:
           rustup default stable
           rustup component add rustfmt clippy
           Set-Content src-tauri/.cargo/config.toml '[net]'
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cargo/registry
@@ -115,6 +115,15 @@ jobs:
             test-results/
             .tooling/webview-fixture/*.log
           if-no-files-found: ignore
+      - name: 保存 Rust 构建缓存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: windows-rust-${{ hashFiles('src-tauri/Cargo.lock') }}
 
   release:
     name: 发布发行版
