@@ -185,6 +185,8 @@ try {
 } catch (e) {
   if (process.env.GITHUB_ACTIONS === 'true') {
     const annotate = (title, value) => console.error(`::error title=${title}::${String(value).slice(-8000).replaceAll('fixture-secret', '[redacted]').replace(/([?&]_?token=)[^\s&]+/g, '$1[redacted]').replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+    const rawError = String(e?.stack || e?.message || e).replaceAll('fixture-secret', '[redacted]').replace(/([?&]_?token=)[^\s&]+/g, '$1[redacted]');
+    annotate('Native test error (base64 UTF-8)', Buffer.from(rawError).subarray(0, 5500).toString('base64'));
     annotate('WebView2 验证失败', e?.message ?? e);
     const logPath = resolve(dir, 'whistlebox.log');
     annotate('应用启动诊断', `pid=${child.pid}, exit=${child.exitCode}, signal=${child.signalCode}\n${startupOutput}\n${existsSync(logPath) ? readFileSync(logPath, 'utf8').slice(-5000) : '应用尚未创建日志文件'}`);
