@@ -1,11 +1,20 @@
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 
-export async function verifyWindowsSystem(invoke) {
+export async function verifyWindowsSystem(nativeInvoke) {
   if (process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') {
     throw Error('系统变更验证仅限 GitHub 托管的临时运行环境');
   }
-  const ps = (script) => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8' }).trim();
+  const invoke = async (command, args) => {
+    let timer;
+    try {
+      return await Promise.race([
+        nativeInvoke(command, args),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(Error(`Windows 系统命令超时：${command}`)), 30000); }),
+      ]);
+    } finally { clearTimeout(timer); }
+  };
+  const ps = (script) => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, encoding: 'utf8', timeout: 20000 }).trim();
   const prefix = String.raw`$ErrorActionPreference='Stop'; $k=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Internet Settings',$true); `;
   const read = () => JSON.parse(ps(prefix + "$v=@{}; foreach($n in @('ProxyEnable','ProxyServer','ProxyOverride','AutoConfigURL')) { $v[$n]=$k.GetValue($n,$null) }; $k.Close(); ConvertTo-Json -InputObject $v -Compress"));
   const before = read();
