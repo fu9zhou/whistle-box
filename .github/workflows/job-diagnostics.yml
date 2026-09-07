@@ -29,6 +29,9 @@ jobs:
             let text = "";
             process.stdin.on("data", chunk => text += chunk);
             process.stdin.on("end", () => {
-              const safe = require("node:util").stripVTControlCharacters(text).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
-              console.log("::notice title=任务日志尾部::" + safe);
+              const clean = require("node:util").stripVTControlCharacters(text);
+              for (let offset = 0; offset < clean.length; offset += 2000) {
+                const safe = clean.slice(offset, offset + 2000).replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+                console.log("::notice title=任务日志片段 " + offset + "::" + safe);
+              }
             });'
