@@ -1,5 +1,15 @@
 # 更新记录
 
+## 0.1.2
+
+- 正式提供 Windows x64、macOS Apple Silicon（arm64）、macOS Intel（x64）和 Linux x64 安装包。
+- 新增 macOS DMG、Linux DEB/AppImage 的 GitHub 原生构建，发行包附统一 SHA-256 校验文件。
+- 修复跨平台生命周期测试的 Windows 固定路径，以及非 Windows 平台的严格编译检查错误。
+- 各平台验证前端、Rust、真实 Whistle 启动、端口冲突、进程退出和上游代理转发；Windows 额外验证 WebView2、系统代理、证书、安装升级和卸载。
+- README 增加版本、构建状态、下载量、许可证徽章和多平台安装说明。
+
+**平台说明：** macOS 与 Linux 安装包仍为实验性支持，桌面界面、托盘和开机启动尚未完成人工验收；系统代理和 CA 证书需手动配置，退出后也需手动恢复代理。macOS 包尚未使用 Apple Developer ID 签名或公证，Windows 包暂未代码签名。
+
 ## 0.1.1
 
 - 升级内置 Node.js 至 22.23.2、Whistle 至 2.10.9，更新存在已知漏洞的构建依赖，并锁定 qs 修复版本。
